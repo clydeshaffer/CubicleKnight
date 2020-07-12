@@ -26,7 +26,7 @@ Square2LastCtrl = $85
 
 DMA_Flags_buffer = $90
 
-current_tilemap = $D0 ; D1
+current_tilemap = $C0 ; C1
 
 displaylist_zp = $E0 ; E1, E2, E3
 
@@ -66,6 +66,15 @@ INPUT_MASK_A		= %00010000
 INPUT_MASK_B		= %00010000
 INPUT_MASK_C		= %00100000
 INPUT_MASK_START	= %00100000
+
+W  = 0
+H  = 1
+GX = 2
+GY = 3
+VX = 4
+VY = 5
+SX = 6
+SY = 7
 
 GuyAnimRow = $20 ;use as number not as address
 GuyStanding = $0
@@ -133,9 +142,9 @@ StartupWait:
 	STA inflate_zp+3
 	JSR Inflate
 
-	LDA #<TestTilemap
+	LDA #<StartMap
 	STA current_tilemap
-	LDA #>TestTilemap
+	LDA #>StartMap
 	STA current_tilemap+1
 	
 	;Copy movables data into RAM
@@ -171,9 +180,9 @@ Forever:
 	STA DMA_Flags
 	JSR DrawTilemap
 
-	STZ MovablesPage+4 ;zero out X speed
+	STZ MovablesPage+SX ;zero out X speed
 	LDA #GuyStanding
-	STA MovablesPage+2
+	STA MovablesPage+GX
 	LDA GamePad2
 	LDA GamePad1
 	EOR #$FF
@@ -185,17 +194,17 @@ Forever:
 	BEQ SkipInput
 	LDY GuyFrame
 	LDX GuyWalkCycle, y
-	STX MovablesPage+2
+	STX MovablesPage+GX
 	LDY #$01
-	STY MovablesPage+4 ;set X speed of first movable
+	STY MovablesPage+SX ;set X speed of first movable
 	LDY #GuyAnimRow
-	STY MovablesPage+3 ;select right-facing row
+	STY MovablesPage+GY ;select right-facing row
 	CMP #INPUT_MASK_RIGHT
 	BEQ SkipInput
 	LDY #$FF
-	STY MovablesPage+4 ;set X speed of first movable
+	STY MovablesPage+SX ;set X speed of first movable
 	LDY #(GuyAnimRow + $10)
-	STY MovablesPage+3 ;select left-facing row
+	STY MovablesPage+GY ;select left-facing row
 SkipInput:
 	
 	INC GuyFrame
@@ -206,7 +215,7 @@ SkipInput:
 AnimLoop:
 
 
-	LDA MovablesPage+4
+	LDA MovablesPage+SX
 	BNE SkipAnimReset
 	STZ GuyFrame
 SkipAnimReset:
@@ -215,19 +224,20 @@ SkipAnimReset:
 	BNE SkipFallDecel
 	LDA #$8
 	STA GuyFallTimer
-	INC MovablesPage+6
+	INC MovablesPage+SY
 SkipFallDecel:
 
-	LDA MovablesPage+6 ;grab Y velocity
+	LDA MovablesPage+SY ;grab Y velocity
 	CLC
 	BMI *+4
 	ADC #$0F ;add 16 to check bottom of sprite
 	CLC
-	ADC MovablesPage+7 ; add Y coordinate
+	ADC MovablesPage+VY ; add Y coordinate
+	BMI NextScreenVert
 	AND #%01111000
 	ASL
 	STA temp
-	LDA MovablesPage+5 ;grab X coordinate
+	LDA MovablesPage+VX ;grab X coordinate
 	CLC
 	ADC #2
 	LSR
@@ -241,16 +251,17 @@ SkipFallDecel:
 	BIT temp
 	BEQ HitGround
 
-	LDA MovablesPage+6 ;grab Y velocity
+	LDA MovablesPage+SY ;grab Y velocity
 	CLC
 	BMI *+4
 	ADC #$0F ;add 16 to check bottom of sprite
 	CLC
-	ADC MovablesPage+7 ; add Y coordinate
+	ADC MovablesPage+VY ; add Y coordinate
+	BMI NextScreenVert
 	AND #%01111000
 	ASL
 	STA temp
-	LDA MovablesPage+5 ;grab X coordinate
+	LDA MovablesPage+VX ;grab X coordinate
 	CLC
 	ADC #14
 	LSR
@@ -264,21 +275,21 @@ SkipFallDecel:
 	BIT temp
 	BNE SkipHitGround
 HitGround:
-	LDA MovablesPage+6
+	LDA MovablesPage+SY
 	BMI *+6
 	LDA #1
 	STA GuyGroundState
-	STZ MovablesPage+6
+	STZ MovablesPage+SY
 	LDA #$01
 	STA GuyFallTimer
 SkipHitGround:
 
-	LDA MovablesPage+6
+	LDA MovablesPage+SY
 	BEQ SkipFallAnim
 	STZ GuyFrame
 	STZ GuyGroundState
 	LDA #GuyJumping
-	STA MovablesPage+2
+	STA MovablesPage+GX
 SkipFallAnim:
 
 	LDA GuyGroundState
@@ -287,24 +298,44 @@ SkipFallAnim:
 	BIT GamePad1BufferA
 	BEQ SkipJumpInputCheck
 	LDA #$FE
-	STA MovablesPage+6
+	STA MovablesPage+SY
 	STZ GuyGroundState
 	LDA #$08
 	STA GuyFallTimer
 SkipJumpInputCheck:
 
-	LDA MovablesPage+7 ;grab Y coordinate
+	JMP DontNextScreenVert
+NextScreenVert:
+	CMP #$C0	
+	BCS PrevScreenVert
+	CLC
+	LDA current_tilemap+1
+	ADC #4
+	STA current_tilemap+1
+	STZ MovablesPage+VY
+	JMP DontNextScreenVert
+PrevScreenVert:
+	DEC current_tilemap+1
+	DEC current_tilemap+1
+	DEC current_tilemap+1
+	DEC current_tilemap+1
+	LDA #(128 - 16)
+	AND #$7F
+	STA MovablesPage+VY
+DontNextScreenVert:
+
+	LDA MovablesPage+VY ;grab Y coordinate
 	AND #%01111000
 	ASL
 	STA temp
 	CLC
-	LDA MovablesPage+4 ;grab X velocity
+	LDA MovablesPage+SX ;grab X velocity
 	BMI *+4 ; check left side if velocity negative
 	ADC #12 ;add 16 to check right side
 	CLC
 	ADC #2
 	CLC
-	ADC MovablesPage+5
+	ADC MovablesPage+VX
 	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
@@ -317,20 +348,20 @@ SkipJumpInputCheck:
 	BIT temp
 	BEQ HitWall
 	
-	LDA MovablesPage+7 ;grab Y coordinate
+	LDA MovablesPage+VY ;grab Y coordinate
 	CLC
 	ADC #$07
 	AND #%01111000
 	ASL
 	STA temp
 	CLC
-	LDA MovablesPage+4 ;grab X velocity
+	LDA MovablesPage+SX ;grab X velocity
 	BMI *+4 ; check left side if velocity negative
 	ADC #12 ;add 16 to check right side
 	CLC
 	ADC #2
 	CLC
-	ADC MovablesPage+5
+	ADC MovablesPage+VX
 	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
@@ -343,20 +374,20 @@ SkipJumpInputCheck:
 	BIT temp
 	BEQ HitWall
 
-	LDA MovablesPage+7 ;grab Y coordinate
+	LDA MovablesPage+VY ;grab Y coordinate
 	CLC
 	ADC #$0F
 	AND #%01111000
 	ASL
 	STA temp
 	CLC
-	LDA MovablesPage+4 ;grab X velocity
+	LDA MovablesPage+SX ;grab X velocity
 	BMI *+4 ; check left side if velocity negative
 	ADC #12 ;add 16 to check right side
 	CLC
 	ADC #2
 	CLC
-	ADC MovablesPage+5
+	ADC MovablesPage+VX
 	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
@@ -370,21 +401,35 @@ SkipJumpInputCheck:
 	BNE SkipHitWall
 
 HitWall:
-	STZ MovablesPage+4
+	STZ MovablesPage+SX
 SkipHitWall:
 
 	JMP DontNextScreen
 NextScreen:
-	LDA MovablesPage+4
-	BMI PrevScreen
+	CMP #$C0	
+	BCS PrevScreen
 	INC current_tilemap+1
-	STZ MovablesPage+5
+	STZ MovablesPage+VX
 	JMP DontNextScreen
 PrevScreen:
 	DEC current_tilemap+1
 	LDA #(128 - 16)
-	STA MovablesPage+5
+	AND #$7F
+	STA MovablesPage+VX
 DontNextScreen:
+
+
+	CLC
+	LDA MovablesPage+SX
+	ADC MovablesPage+VX
+	;AND #$7F
+	STA MovablesPage+VX
+
+	CLC
+	LDA MovablesPage+SY
+	ADC MovablesPage+VY
+	;AND #$7F
+	STA MovablesPage+VY
 
 	;Draw nonstatic objects
 	LDA DMA_Flags_buffer
@@ -461,7 +506,7 @@ HoldNote:
 	LDY #$53
 	STY NoiseCtrl
 
-	LDA MovablesPage+6
+	LDA MovablesPage+SY
 	BPL NoJumpSound
 	BNE JumpSound
 NoJumpSound:
@@ -471,7 +516,7 @@ NoJumpSound:
 	STA SquareCtrl2
 	JMP Forever
 JumpSound:
-	LDA MovablesPage+6
+	LDA MovablesPage+SY
 	ASL
 	ASL
 	ASL
@@ -500,21 +545,13 @@ DrawMovables:
 	STA DMA_GY
 	STA DMA_Color
 	INY
-	LDA (displaylist_zp), y ;load speed X
-	INY
-	CLC
-	ADC (displaylist_zp), y ;load VX
-	AND #$7F
-	STA (displaylist_zp), y
+	LDA (displaylist_zp), y ;load VX
 	STA DMA_VX
 	INY
-	LDA (displaylist_zp), y ;load speed Y
-	INY
-	CLC
-	ADC (displaylist_zp), y ;load VY
-	AND #$7F
-	STA (displaylist_zp), y
+	LDA (displaylist_zp), y ;load VY
 	STA DMA_VY
+	INY
+	INY
 	INY
 	LDA #1
 	STA DMA_Status
@@ -633,11 +670,21 @@ NoteFreqs:
 MusicData:
 	.incbin "minuetrondo.dat"
 Maps:
-	.incbin "tilekit\testmap2.0_3.map"
-TestTilemap:
-	.incbin "tilekit\testmap2.1_3.map"
-	.incbin	"tilekit\testmap2.2_3.map"
-	.incbin	"tilekit\testmap2.3_3.map"
+	.incbin "tilekit\testmap3.0_1.map"
+	.incbin "tilekit\testmap3.1_1.map"
+	.incbin	"tilekit\testmap3.2_1.map"
+	.incbin	"tilekit\testmap3.3_1.map"
+
+	.incbin "tilekit\testmap3.0_2.map"
+StartMap:
+	.incbin "tilekit\testmap3.1_2.map"
+	.incbin	"tilekit\testmap3.2_2.map"
+	.incbin	"tilekit\testmap3.3_2.map"
+
+	.incbin "tilekit\testmap3.0_3.map"
+	.incbin "tilekit\testmap3.1_3.map"
+	.incbin	"tilekit\testmap3.2_3.map"
+	.incbin	"tilekit\testmap3.3_3.map"
 
 NMI:
 	STZ FrameFlag
