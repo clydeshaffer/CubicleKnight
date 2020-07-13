@@ -32,7 +32,12 @@ displaylist_zp = $E0 ; E1, E2, E3
 
 inflate_zp = $F0 ; F1, F2, F3
 
-MovablesPage = $0300
+inflate_data = $0200 ; until $04FD
+
+MovablesPage = $0500
+
+LoadedMapsFirstPage = $1000 ; through $2000
+StartMap = $1900
 
 SquareNote1 = $2000
 SquareCtrl1 = $2001
@@ -95,7 +100,7 @@ SpikeBall_GY = $40
 
 	.org $E000
 Inflate:
-	.incbin "inflate_e000.obx"
+	.incbin "inflate_e000_0200.obx"
 RESET:
 	LDX #$FF
 	TXS
@@ -139,6 +144,17 @@ StartupWait:
 	LDA #<Framebuffer
 	STA inflate_zp+2
 	LDA #>Framebuffer
+	STA inflate_zp+3
+	JSR Inflate
+
+	;decomprss map data
+	LDA #<Maps
+	STA inflate_zp
+	LDA #>Maps
+	STA inflate_zp+1
+	LDA #<LoadedMapsFirstPage
+	STA inflate_zp+2
+	LDA #>LoadedMapsFirstPage
 	STA inflate_zp+3
 	JSR Inflate
 
@@ -668,23 +684,9 @@ NoteFreqs:
 
 	.align 8
 MusicData:
-	.incbin "minuetrondo.dat"
+	.incbin "koro.dat"
 Maps:
-	.incbin "tilekit\testmap3.0_1.map"
-	.incbin "tilekit\testmap3.1_1.map"
-	.incbin	"tilekit\testmap3.2_1.map"
-	.incbin	"tilekit\testmap3.3_1.map"
-
-	.incbin "tilekit\testmap3.0_2.map"
-StartMap:
-	.incbin "tilekit\testmap3.1_2.map"
-	.incbin	"tilekit\testmap3.2_2.map"
-	.incbin	"tilekit\testmap3.3_2.map"
-
-	.incbin "tilekit\testmap3.0_3.map"
-	.incbin "tilekit\testmap3.1_3.map"
-	.incbin	"tilekit\testmap3.2_3.map"
-	.incbin	"tilekit\testmap3.3_3.map"
+	.incbin "tilekit\testmap3_merged.map.deflate"
 
 NMI:
 	STZ FrameFlag
