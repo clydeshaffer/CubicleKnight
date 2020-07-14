@@ -1,5 +1,7 @@
 temp = $10
 
+gameobject = $20
+
 FrameFlag = $34
 GuyFrame = $35
 GuyFallTimer = $36
@@ -29,7 +31,6 @@ DMA_Flags_buffer = $90
 current_tilemap = $C0 ; C1
 
 displaylist_zp = $E0 ; E1, E2, E3
-gameobject = $E4 ; E5
 gameobject_updater = $E6; E7
 
 inflate_zp = $F0 ; F1, F2, F3
@@ -82,6 +83,7 @@ GY = 3
 VX = 4
 VY = 5
 SX = 6
+FuncNum = 6
 SY = 7
 EntData = 7
 
@@ -601,29 +603,65 @@ UpdateItems:
 	LDA (displaylist_zp), y ;load width
 	BNE *+3
 	RTS
-	TYA
-	CLC
-	ADC displaylist_zp
-	STA gameobject
-	LDA displaylist_zp+1
-	STA gameobject+1
+	
+	PHY
+	;copy item data struct into working area
+	STA gameobject+W
 	INY
+	LDA (displaylist_zp), y
+	STA gameobject+H
 	INY
+	LDA (displaylist_zp), y
+	STA gameobject+GX
 	INY
+	LDA (displaylist_zp), y
+	STA gameobject+GY
 	INY
+	LDA (displaylist_zp), y
+	STA gameobject+VX
 	INY
+	LDA (displaylist_zp), y
+	STA gameobject+VY
 	INY
-	LDA (displaylist_zp), y ;load SX
-	TAX
+	LDA (displaylist_zp), y
+	STA gameobject+FuncNum
+	INY
+	LDA (displaylist_zp), y
+	STA gameobject+EntData
+	INY
+	;run this item's update func
+	LDX gameobject+FuncNum
 	LDA UpdateFuncs, x
 	STA gameobject_updater
 	LDA UpdateFuncs+1, x
 	STA gameobject_updater+1
-	PHY
 	JMP (gameobject_updater)
 UpdateDone:
 	PLY
+	;copy item data struct back from working area
+	LDA gameobject+W
+	STA (displaylist_zp), y
 	INY
+	LDA gameobject+H
+	STA (displaylist_zp), y
+	INY
+	LDA gameobject+GX
+	STA (displaylist_zp), y
+	INY
+	LDA gameobject+GY
+	STA (displaylist_zp), y
+	INY
+	LDA gameobject+VX
+	STA (displaylist_zp), y
+	INY
+	LDA gameobject+VY
+	STA (displaylist_zp), y
+	INY
+	LDA gameobject+FuncNum
+	STA (displaylist_zp), y
+	INY
+	LDA gameobject+EntData
+	STA (displaylist_zp), y
 	INY
 	JMP UpdateItems+2	
 
@@ -792,58 +830,73 @@ SetFreqAndOctave:
 	RTS
 
 LizardUpdate:
-	LDX #$01
-	LDY #EntData
-	LDA (gameobject), y
-	CLC
-	ADC #1
-	STA (gameobject), y
+	INC gameobject+EntData
 
-	AND #%01000000
+	LDX #$01
+	LDA #%01000000
+	BIT gameobject+EntData
 	BNE *+4
 	LDX #$FF
 	STX temp
 	
-	LDA (gameobject), y
-	AND #%00000010
+	LDA #%00000010
+	BIT gameobject+EntData
 	BEQ *+4
 	STZ temp
 
-	LDA (gameobject), y
-	AND #%00111111
+	LDA #%00111111
+	BIT gameobject+EntData
 	BNE LizardAnim
-	LDY #GY
-	LDA (gameobject), y
+	LDA gameobject+GY
 	EOR #$10
-	STA (gameobject), y
+	STA gameobject+GY
 
 LizardAnim:
-	LDY #EntData
-	LDA (gameobject), y
-	AND #%00001111
+	LDA #%00001111
+	BIT gameobject+EntData
 	BNE LizardMove
-	LDY #GX
-	LDA (gameobject), y
+	LDA gameobject+GX
 	EOR #$10
-	STA (gameobject), y
+	STA gameobject+GX
 
 LizardMove:
-	LDY #VX
-	LDA (gameobject), y
+	LDA gameobject+VX
 	CLC
 	ADC temp
-	STA (gameobject), y
+	STA gameobject+VX
 
 	JMP UpdateDone
+
 BurgerUpdate:
+	INC gameobject+EntData
+	LDA gameobject+EntData
+	AND #$1F
+
+	TAX
+	LDA BounceAnim, x
+	CLC
+	ADC gameobject+VY
+	STA gameobject+VY
 	JMP UpdateDone
+
 KeyUpdate:
+	INC gameobject+EntData
+	LDA gameobject+EntData
+	AND #$1F
+
+	TAX
+	LDA BounceAnim, x
+	CLC
+	ADC gameobject+VY
+	STA gameobject+VY
 	JMP UpdateDone
+
 NullUpdate:
 	JMP UpdateDone
 
-DisplayList:
-	.incbin "displaylist_test_1.dat"
+BounceAnim:
+	.db $01, $00, $00, $00, $00, $00, $00, $00, $01, $00, $00, $00, $00, $00, $00, $00
+	.db $FF, $00, $00, $00, $00, $00, $00, $00, $FF, $00, $00, $00, $00, $00, $00, $00
 
 Movables:
 	.db $0F, $10, GuyStanding, GuyAnimRow, $01, $00, $00, $20
@@ -865,7 +918,7 @@ ItemTemplates:
 	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
 	.db $0F, $10, $00, $40, $40, $40, $00, $00 ; Lizard
 	.db $0F, $10, $40, $40, $40, $40, $02, $00 ; Burger
-	.db $0F, $10, $20, $50, $40, $40, $04, $00 ; Key
+	.db $0F, $10, $20, $50, $40, $40, $04, $08 ; Key
 	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
