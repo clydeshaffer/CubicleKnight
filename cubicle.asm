@@ -29,12 +29,15 @@ DMA_Flags_buffer = $90
 current_tilemap = $C0 ; C1
 
 displaylist_zp = $E0 ; E1, E2, E3
+gameobject = $E4 ; E5
+gameobject_updater = $E6; E7
 
 inflate_zp = $F0 ; F1, F2, F3
 
 inflate_data = $0200 ; until $04FD
 
-MovablesPage = $0500
+PlayerData = $0500
+Items = $0510
 
 LoadedMapsFirstPage = $1000 ; through $2000
 StartMap = $1900
@@ -80,13 +83,11 @@ VX = 4
 VY = 5
 SX = 6
 SY = 7
+EntData = 7
 
 GuyAnimRow = $20 ;use as number not as address
 GuyStanding = $0
 GuyJumping = $40
-
-SpikeBall_GX = $20
-SpikeBall_GY = $40
 
 ;DMA flags are as follows
 ; 1   ->   DMA enabled
@@ -168,9 +169,9 @@ StartupWait:
 	STA displaylist_zp
 	LDA #>Movables
 	STA displaylist_zp+1
-	LDA #<MovablesPage
+	LDA #<PlayerData
 	STA displaylist_zp+2
-	LDA #>MovablesPage
+	LDA #>PlayerData
 	STA displaylist_zp+3
 	LDY #0
 	JSR CopyPage
@@ -196,9 +197,9 @@ Forever:
 	STA DMA_Flags
 	JSR DrawTilemap
 
-	STZ MovablesPage+SX ;zero out X speed
+	STZ PlayerData+SX ;zero out X speed
 	LDA #GuyStanding
-	STA MovablesPage+GX
+	STA PlayerData+GX
 	LDA GamePad2
 	LDA GamePad1
 	EOR #$FF
@@ -210,17 +211,17 @@ Forever:
 	BEQ SkipInput
 	LDY GuyFrame
 	LDX GuyWalkCycle, y
-	STX MovablesPage+GX
+	STX PlayerData+GX
 	LDY #$01
-	STY MovablesPage+SX ;set X speed of first movable
+	STY PlayerData+SX ;set X speed of first movable
 	LDY #GuyAnimRow
-	STY MovablesPage+GY ;select right-facing row
+	STY PlayerData+GY ;select right-facing row
 	CMP #INPUT_MASK_RIGHT
 	BEQ SkipInput
 	LDY #$FF
-	STY MovablesPage+SX ;set X speed of first movable
+	STY PlayerData+SX ;set X speed of first movable
 	LDY #(GuyAnimRow + $10)
-	STY MovablesPage+GY ;select left-facing row
+	STY PlayerData+GY ;select left-facing row
 SkipInput:
 	
 	INC GuyFrame
@@ -231,7 +232,7 @@ SkipInput:
 AnimLoop:
 
 
-	LDA MovablesPage+SX
+	LDA PlayerData+SX
 	BNE SkipAnimReset
 	STZ GuyFrame
 SkipAnimReset:
@@ -240,20 +241,20 @@ SkipAnimReset:
 	BNE SkipFallDecel
 	LDA #$8
 	STA GuyFallTimer
-	INC MovablesPage+SY
+	INC PlayerData+SY
 SkipFallDecel:
 
-	LDA MovablesPage+SY ;grab Y velocity
+	LDA PlayerData+SY ;grab Y velocity
 	CLC
 	BMI *+4
 	ADC #$0F ;add 16 to check bottom of sprite
 	CLC
-	ADC MovablesPage+VY ; add Y coordinate
+	ADC PlayerData+VY ; add Y coordinate
 	BMI NextScreenVert
 	AND #%01111000
 	ASL
 	STA temp
-	LDA MovablesPage+VX ;grab X coordinate
+	LDA PlayerData+VX ;grab X coordinate
 	CLC
 	ADC #2
 	LSR
@@ -267,17 +268,17 @@ SkipFallDecel:
 	BIT temp
 	BEQ HitGround
 
-	LDA MovablesPage+SY ;grab Y velocity
+	LDA PlayerData+SY ;grab Y velocity
 	CLC
 	BMI *+4
 	ADC #$0F ;add 16 to check bottom of sprite
 	CLC
-	ADC MovablesPage+VY ; add Y coordinate
+	ADC PlayerData+VY ; add Y coordinate
 	BMI NextScreenVert
 	AND #%01111000
 	ASL
 	STA temp
-	LDA MovablesPage+VX ;grab X coordinate
+	LDA PlayerData+VX ;grab X coordinate
 	CLC
 	ADC #14
 	LSR
@@ -291,21 +292,21 @@ SkipFallDecel:
 	BIT temp
 	BNE SkipHitGround
 HitGround:
-	LDA MovablesPage+SY
+	LDA PlayerData+SY
 	BMI *+6
 	LDA #1
 	STA GuyGroundState
-	STZ MovablesPage+SY
+	STZ PlayerData+SY
 	LDA #$01
 	STA GuyFallTimer
 SkipHitGround:
 
-	LDA MovablesPage+SY
+	LDA PlayerData+SY
 	BEQ SkipFallAnim
 	STZ GuyFrame
 	STZ GuyGroundState
 	LDA #GuyJumping
-	STA MovablesPage+GX
+	STA PlayerData+GX
 SkipFallAnim:
 
 	LDA GuyGroundState
@@ -314,7 +315,7 @@ SkipFallAnim:
 	BIT GamePad1BufferA
 	BEQ SkipJumpInputCheck
 	LDA #$FE
-	STA MovablesPage+SY
+	STA PlayerData+SY
 	STZ GuyGroundState
 	LDA #$08
 	STA GuyFallTimer
@@ -328,7 +329,8 @@ NextScreenVert:
 	LDA current_tilemap+1
 	ADC #4
 	STA current_tilemap+1
-	STZ MovablesPage+VY
+	STZ PlayerData+VY
+	JSR SpawnItems
 	JMP DontNextScreenVert
 PrevScreenVert:
 	DEC current_tilemap+1
@@ -337,21 +339,22 @@ PrevScreenVert:
 	DEC current_tilemap+1
 	LDA #(128 - 16)
 	AND #$7F
-	STA MovablesPage+VY
+	STA PlayerData+VY
+	JSR SpawnItems
 DontNextScreenVert:
 
-	LDA MovablesPage+VY ;grab Y coordinate
+	LDA PlayerData+VY ;grab Y coordinate
 	AND #%01111000
 	ASL
 	STA temp
 	CLC
-	LDA MovablesPage+SX ;grab X velocity
+	LDA PlayerData+SX ;grab X velocity
 	BMI *+4 ; check left side if velocity negative
 	ADC #12 ;add 16 to check right side
 	CLC
 	ADC #2
 	CLC
-	ADC MovablesPage+VX
+	ADC PlayerData+VX
 	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
@@ -364,20 +367,20 @@ DontNextScreenVert:
 	BIT temp
 	BEQ HitWall
 	
-	LDA MovablesPage+VY ;grab Y coordinate
+	LDA PlayerData+VY ;grab Y coordinate
 	CLC
 	ADC #$07
 	AND #%01111000
 	ASL
 	STA temp
 	CLC
-	LDA MovablesPage+SX ;grab X velocity
+	LDA PlayerData+SX ;grab X velocity
 	BMI *+4 ; check left side if velocity negative
 	ADC #12 ;add 16 to check right side
 	CLC
 	ADC #2
 	CLC
-	ADC MovablesPage+VX
+	ADC PlayerData+VX
 	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
@@ -390,20 +393,20 @@ DontNextScreenVert:
 	BIT temp
 	BEQ HitWall
 
-	LDA MovablesPage+VY ;grab Y coordinate
+	LDA PlayerData+VY ;grab Y coordinate
 	CLC
 	ADC #$0F
 	AND #%01111000
 	ASL
 	STA temp
 	CLC
-	LDA MovablesPage+SX ;grab X velocity
+	LDA PlayerData+SX ;grab X velocity
 	BMI *+4 ; check left side if velocity negative
 	ADC #12 ;add 16 to check right side
 	CLC
 	ADC #2
 	CLC
-	ADC MovablesPage+VX
+	ADC PlayerData+VX
 	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
@@ -417,7 +420,7 @@ DontNextScreenVert:
 	BNE SkipHitWall
 
 HitWall:
-	STZ MovablesPage+SX
+	STZ PlayerData+SX
 SkipHitWall:
 
 	JMP DontNextScreen
@@ -425,36 +428,55 @@ NextScreen:
 	CMP #$C0	
 	BCS PrevScreen
 	INC current_tilemap+1
-	STZ MovablesPage+VX
+	STZ PlayerData+VX
+	JSR SpawnItems
 	JMP DontNextScreen
 PrevScreen:
 	DEC current_tilemap+1
 	LDA #(128 - 16)
 	AND #$7F
-	STA MovablesPage+VX
+	STA PlayerData+VX
+	JSR SpawnItems
 DontNextScreen:
 
 
 	CLC
-	LDA MovablesPage+SX
-	ADC MovablesPage+VX
+	LDA PlayerData+SX
+	ADC PlayerData+VX
 	;AND #$7F
-	STA MovablesPage+VX
+	STA PlayerData+VX
 
 	CLC
-	LDA MovablesPage+SY
-	ADC MovablesPage+VY
+	LDA PlayerData+SY
+	ADC PlayerData+VY
 	;AND #$7F
-	STA MovablesPage+VY
+	STA PlayerData+VY
 
-	;Draw nonstatic objects
+	;Draw player object
 	LDA DMA_Flags_buffer
 	ORA #%10000000
 	STA DMA_Flags_buffer
 	STA DMA_Flags
-	LDA #<MovablesPage
+	LDA #<PlayerData
 	STA displaylist_zp
-	LDA #>MovablesPage
+	LDA #>PlayerData
+	STA displaylist_zp+1
+	JSR DrawMovables
+
+	LDA #<Items
+	STA displaylist_zp
+	LDA #>Items
+	STA displaylist_zp+1
+	JSR UpdateItems
+
+	;Draw Nonstatic Objects
+	LDA DMA_Flags_buffer
+	ORA #%10000000
+	STA DMA_Flags_buffer
+	STA DMA_Flags
+	LDA #<Items
+	STA displaylist_zp
+	LDA #>Items
 	STA displaylist_zp+1
 	JSR DrawMovables
 
@@ -522,7 +544,7 @@ HoldNote:
 	LDY #$53
 	STY NoiseCtrl
 
-	LDA MovablesPage+SY
+	LDA PlayerData+SY
 	BPL NoJumpSound
 	BNE JumpSound
 NoJumpSound:
@@ -532,7 +554,7 @@ NoJumpSound:
 	STA SquareCtrl2
 	JMP Forever
 JumpSound:
-	LDA MovablesPage+SY
+	LDA PlayerData+SY
 	ASL
 	ASL
 	ASL
@@ -573,6 +595,110 @@ DrawMovables:
 	STA DMA_Status
 	WAI
 	JMP DrawMovables+2	
+
+UpdateItems:
+	LDY #$0
+	LDA (displaylist_zp), y ;load width
+	BNE *+3
+	RTS
+	TYA
+	CLC
+	ADC displaylist_zp
+	STA gameobject
+	LDA displaylist_zp+1
+	STA gameobject+1
+	INY
+	INY
+	INY
+	INY
+	INY
+	INY
+	LDA (displaylist_zp), y ;load SX
+	TAX
+	LDA UpdateFuncs, x
+	STA gameobject_updater
+	LDA UpdateFuncs+1, x
+	STA gameobject_updater+1
+	PHY
+	JMP (gameobject_updater)
+UpdateDone:
+	PLY
+	INY
+	INY
+	JMP UpdateItems+2	
+
+SpawnItems:
+	LDY #$0
+	LDA #<Items
+	STA temp
+	LDA #>Items
+	STA temp+1
+	LDA #<ItemTemplates
+	STA temp+2
+	LDA #>ItemTemplates
+	STA temp+3 
+	LDA #0
+	STA (temp), y
+SpawnItemsLoop:
+	LDA (current_tilemap), y
+	CMP #$F0
+	BCC SpawnItemsNextTile
+	AND #$0F
+	ASL
+	ASL
+	ASL
+	CLC
+	ADC #<ItemTemplates
+	STA temp+2
+
+	TYA
+	AND #$0F
+	ASL
+	ASL
+	ASL
+	STA temp+4 ;calc X coord
+	TYA
+	AND #$F0
+	LSR
+	STA temp+5 ;calc Y coord
+
+	PHY
+	LDY #0
+	LDA (temp+2), y ;copy width
+	STA (temp), y
+	INY
+	LDA (temp+2), y ;copy height
+	STA (temp), y
+	INY
+	LDA (temp+2), y ;copy GX
+	STA (temp), y
+	INY
+	LDA (temp+2), y ;copy GY
+	STA (temp), y
+	INY
+	LDA temp+4 ; copy from calculated VX
+	STA (temp), y
+	INY
+	LDA temp+5 ; copy from calculated VY
+	STA (temp), y
+	INY
+	LDA (temp+2), y ;copy Fn (update function number)
+	STA (temp), y
+	INY
+	LDA (temp+2), y ;copy item state byte
+	STA (temp), y
+
+	LDA temp
+	CLC
+	ADC #8
+	STA temp
+	PLY
+SpawnItemsNextTile:
+	INY
+	BNE SpawnItemsLoop
+	LDA #0
+	STA (temp), y
+	RTS
 
 DrawTilemap:
 	LDA #$08
@@ -665,16 +791,94 @@ SetFreqAndOctave:
 	LDA NoteFreqs, x;
 	RTS
 
+LizardUpdate:
+	LDX #$01
+	LDY #EntData
+	LDA (gameobject), y
+	CLC
+	ADC #1
+	STA (gameobject), y
+
+	AND #%01000000
+	BNE *+4
+	LDX #$FF
+	STX temp
+	
+	LDA (gameobject), y
+	AND #%00000010
+	BEQ *+4
+	STZ temp
+
+	LDA (gameobject), y
+	AND #%00111111
+	BNE LizardAnim
+	LDY #GY
+	LDA (gameobject), y
+	EOR #$10
+	STA (gameobject), y
+
+LizardAnim:
+	LDY #EntData
+	LDA (gameobject), y
+	AND #%00001111
+	BNE LizardMove
+	LDY #GX
+	LDA (gameobject), y
+	EOR #$10
+	STA (gameobject), y
+
+LizardMove:
+	LDY #VX
+	LDA (gameobject), y
+	CLC
+	ADC temp
+	STA (gameobject), y
+
+	JMP UpdateDone
+BurgerUpdate:
+	JMP UpdateDone
+KeyUpdate:
+	JMP UpdateDone
+NullUpdate:
+	JMP UpdateDone
+
 DisplayList:
 	.incbin "displaylist_test_1.dat"
 
 Movables:
 	.db $0F, $10, GuyStanding, GuyAnimRow, $01, $00, $00, $20
-	;.db $0F, $10, SpikeBall_GX, SpikeBall_GY, $FE, $00, $01, $18
-	.db $00
+	.db $00, $00, $00, $00, $00, $00, $00, $00
+	.db $00, $00, $00, $00, $00, $00, $00, $00
+	.db $00, $00, $00, $00, $00, $00, $00, $00
+	.db $00, $00, $00, $00, $00, $00, $00, $00
 
 GuyWalkCycle:
 	.db $10, $10, $10, $20, $20, $20, $30, $30, $30, $FF
+
+UpdateFuncs:         ;id#
+	.dw LizardUpdate ;0
+	.dw BurgerUpdate ;2
+	.dw KeyUpdate    ;4
+	.dw NullUpdate   ;6
+
+ItemTemplates:
+	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
+	.db $0F, $10, $00, $40, $40, $40, $00, $00 ; Lizard
+	.db $0F, $10, $40, $40, $40, $40, $02, $00 ; Burger
+	.db $0F, $10, $20, $50, $40, $40, $04, $00 ; Key
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
 
 Sprites:
 	.incbin "gamesprites.gtg.deflate"
