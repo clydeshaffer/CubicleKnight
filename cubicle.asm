@@ -41,7 +41,7 @@ PlayerData = $0500
 Items = $0510
 
 LoadedMapsFirstPage = $1000 ; through $2000
-StartMap = $1900
+StartMap = $1C00
 
 SquareNote1 = $2000
 SquareCtrl1 = $2001
@@ -896,6 +896,13 @@ KeyUpdate:
 	INC gameobject+VX
 	JMP UpdateDone
 
+SpringUpdate:
+	LDX #$FC
+	JSR CheckIntersectPlayer
+	BEQ *+4
+	STX PlayerData+SY
+	JMP UpdateDone
+
 NullUpdate:
 	JMP UpdateDone
 
@@ -950,7 +957,7 @@ BounceAnim:
 	.db $01, $00, $00, $00, $00, $00, $00, $00, $01, $00, $00, $00, $00, $00, $00, $00
 
 Movables:
-	.db $0F, $10, GuyStanding, GuyAnimRow, $01, $00, $00, $20
+	.db $0F, $10, GuyStanding, GuyAnimRow, $10, $40, $00, $20
 	.db $00, $00, $00, $00, $00, $00, $00, $00
 	.db $00, $00, $00, $00, $00, $00, $00, $00
 	.db $00, $00, $00, $00, $00, $00, $00, $00
@@ -964,13 +971,14 @@ UpdateFuncs:         ;id#
 	.dw LizardUpdate ;2
 	.dw BurgerUpdate ;4
 	.dw KeyUpdate    ;6
+	.dw SpringUpdate ;8
 
 ItemTemplates:
 	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
 	.db $0F, $10, $00, $40, $40, $40, $02, $00 ; Lizard
 	.db $0F, $10, $40, $40, $40, $40, $04, $00 ; Burger
 	.db $0F, $10, $20, $50, $40, $40, $04, $08 ; Key
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $08, $30, $40, $40, $40, $08, $00 ; Spring
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
@@ -994,7 +1002,7 @@ NoteFreqs:
 MusicData:
 	.incbin "koro.dat"
 Maps:
-	.incbin "tilekit\testmap3_merged.map.deflate"
+	.incbin "tiled\testmap1_merged.map.deflate"
 
 NMI:
 	STZ FrameFlag
