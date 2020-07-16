@@ -877,26 +877,77 @@ BurgerUpdate:
 	CLC
 	ADC gameobject+VY
 	STA gameobject+VY
+
+	JSR CheckIntersectPlayer
+	BNE *+5
+	JMP UpdateDone
+	STZ gameobject+FuncNum
+	LDA gameobject+GX
+	ORA #$80
+	STA gameobject+GX
+	LDA #$FF
+	STA gameobject+GY
+	JSR RemoveMe
 	JMP UpdateDone
 
 KeyUpdate:
-	INC gameobject+EntData
-	LDA gameobject+EntData
-	AND #$1F
-
-	TAX
-	LDA BounceAnim, x
-	CLC
-	ADC gameobject+VY
-	STA gameobject+VY
+	JSR CheckIntersectPlayer
+	BEQ *+4
+	INC gameobject+VX
 	JMP UpdateDone
 
 NullUpdate:
 	JMP UpdateDone
 
+RemoveMe:
+	LDA gameobject+VX
+	CLC
+	ADC #2
+	AND #$7F
+	LSR
+	LSR
+	LSR
+	STA temp
+	LDA gameobject+VY
+	CLC
+	ADC #2
+	AND #$78
+	ASL
+	ORA temp
+	TAY
+	LDA #$EF
+	STA (current_tilemap), y
+	RTS
+
+CheckIntersectPlayer:
+	LDA gameobject+VX
+	SEC
+	SBC PlayerData+VX
+	JSR ABS
+	CMP #$10
+	BCS ReturnNoIntersect
+	LDA gameobject+VY
+	SEC
+	SBC PlayerData+VY
+	JSR ABS
+	CMP #$10
+	BCS ReturnNoIntersect
+	LDA #1
+	RTS
+ReturnNoIntersect:
+	LDA #0
+	RTS
+
+ABS:
+	BPL *+7
+	EOR #$FF
+	CLC
+	ADC #1
+	RTS
+
 BounceAnim:
-	.db $01, $00, $00, $00, $00, $00, $00, $00, $01, $00, $00, $00, $00, $00, $00, $00
 	.db $FF, $00, $00, $00, $00, $00, $00, $00, $FF, $00, $00, $00, $00, $00, $00, $00
+	.db $01, $00, $00, $00, $00, $00, $00, $00, $01, $00, $00, $00, $00, $00, $00, $00
 
 Movables:
 	.db $0F, $10, GuyStanding, GuyAnimRow, $01, $00, $00, $20
@@ -909,29 +960,29 @@ GuyWalkCycle:
 	.db $10, $10, $10, $20, $20, $20, $30, $30, $30, $FF
 
 UpdateFuncs:         ;id#
-	.dw LizardUpdate ;0
-	.dw BurgerUpdate ;2
-	.dw KeyUpdate    ;4
-	.dw NullUpdate   ;6
+	.dw NullUpdate   ;0
+	.dw LizardUpdate ;2
+	.dw BurgerUpdate ;4
+	.dw KeyUpdate    ;6
 
 ItemTemplates:
 	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
-	.db $0F, $10, $00, $40, $40, $40, $00, $00 ; Lizard
-	.db $0F, $10, $40, $40, $40, $40, $02, $00 ; Burger
+	.db $0F, $10, $00, $40, $40, $40, $02, $00 ; Lizard
+	.db $0F, $10, $40, $40, $40, $40, $04, $00 ; Burger
 	.db $0F, $10, $20, $50, $40, $40, $04, $08 ; Key
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $06, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 
 Sprites:
 	.incbin "gamesprites.gtg.deflate"
