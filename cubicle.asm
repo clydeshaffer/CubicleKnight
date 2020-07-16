@@ -252,7 +252,8 @@ SkipFallDecel:
 	ADC #$0F ;add 16 to check bottom of sprite
 	CLC
 	ADC PlayerData+VY ; add Y coordinate
-	BMI NextScreenVert
+	BPL *+5
+	JMP NextScreenVert
 	AND #%01111000
 	ASL
 	STA temp
@@ -276,7 +277,29 @@ SkipFallDecel:
 	ADC #$0F ;add 16 to check bottom of sprite
 	CLC
 	ADC PlayerData+VY ; add Y coordinate
-	BMI NextScreenVert
+	AND #%01111000
+	ASL
+	STA temp
+	LDA PlayerData+VX ;grab X coordinate
+	CLC
+	ADC #8
+	LSR
+	LSR				;coordinates are two 7 bit numbers
+	LSR				;tilemap grid index is (Y & %01111000) << 4 | (X >> 3)
+	ORA temp
+	TAY
+	LDA (current_tilemap), y
+	STA temp
+	LDA	#%11110000
+	BIT temp
+	BEQ HitGround
+
+	LDA PlayerData+SY ;grab Y velocity
+	CLC
+	BMI *+4
+	ADC #$0F ;add 16 to check bottom of sprite
+	CLC
+	ADC PlayerData+VY ; add Y coordinate
 	AND #%01111000
 	ASL
 	STA temp
@@ -383,7 +406,6 @@ DontNextScreenVert:
 	ADC #2
 	CLC
 	ADC PlayerData+VX
-	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
 	LSR				;tilemap grid index is (Y & %01111000) << 4 | (X >> 3)
@@ -409,7 +431,6 @@ DontNextScreenVert:
 	ADC #2
 	CLC
 	ADC PlayerData+VX
-	BMI NextScreen
 	LSR
 	LSR				;coordinates are two 7 bit numbers
 	LSR				;tilemap grid index is (Y & %01111000) << 4 | (X >> 3)
@@ -899,7 +920,7 @@ KeyUpdate:
 SpringUpdate:
 	LDX #$FC
 	JSR CheckIntersectPlayer
-	BEQ *+4
+	BEQ *+5
 	STX PlayerData+SY
 	JMP UpdateDone
 
