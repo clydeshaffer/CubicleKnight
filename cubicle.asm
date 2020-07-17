@@ -28,6 +28,11 @@ Square2LastCtrl = $85
 
 DMA_Flags_buffer = $90
 
+sfx_ch1 = $B0;B1
+sfx_ch2 = sfx_ch1+2
+sfx_ch3 = sfx_ch2+2
+sfx_ch4 = sfx_ch3+2
+
 current_tilemap = $C0 ; C1
 
 displaylist_zp = $E0 ; E1, E2, E3
@@ -121,7 +126,7 @@ StartupWait:
 	LDA #0
 	STA SquareNote1
 	STA SquareNote2
-	LDA #$24
+	LDA #$00
 	STA WaveNote
 	LDA #63
 	STA SquareCtrl1
@@ -134,6 +139,17 @@ StartupWait:
 	STZ GuyGroundState
 	LDA #1
 	STA GuyFallTimer
+
+	;Fill wavetable with zero
+	LDA #<AudioSamples
+	STA inflate_zp
+	LDA #>AudioSamples
+	STA inflate_zp+1
+	LDA #<Wavetable
+	STA inflate_zp+2
+	LDA #>Wavetable
+	STA inflate_zp+3
+	JSR Inflate
 
 	;extract graphics to graphics RAM
 	LDA #%00000000	;Activate lower page of VRAM/GRAM, CPU accesses GRAM, no IRQ, no transparency
@@ -165,6 +181,10 @@ StartupWait:
 	STA current_tilemap
 	LDA #>StartMap
 	STA current_tilemap+1
+	LDA #<SFX_None
+	STA sfx_ch2
+	LDA #>SFX_None
+	STA sfx_ch2+1
 	
 	;Copy movables data into RAM
 	LDA #<Movables
@@ -344,6 +364,10 @@ SkipFallAnim:
 	STZ GuyGroundState
 	LDA #$08
 	STA GuyFallTimer
+	LDA #<SFX_Jump
+	STA sfx_ch2
+	LDA #>SFX_Jump
+	STA sfx_ch2+1
 SkipJumpInputCheck:
 
 	JMP DontNextScreenVert
@@ -567,28 +591,26 @@ HoldNote:
 	LDY #$53
 	STY NoiseCtrl
 
-	LDA PlayerData+SY
-	BPL NoJumpSound
-	BNE JumpSound
-NoJumpSound:
+	LDY #0
+	LDA (sfx_ch2), y
+	BEQ NoSFX2
+	STA SquareNote2
+	INC sfx_ch2
+	BNE *+4
+	INC sfx_ch2+1
+	LDA (sfx_ch2), y
+	STA SquareCtrl2
+	INC sfx_ch2
+	BNE *+4
+	INC sfx_ch2+1
+	JMP Forever
+NoSFX2:
 	LDA Square2LastNote
 	STA SquareNote2
 	LDA Square2LastCtrl
 	STA SquareCtrl2
 	JMP Forever
-JumpSound:
-	LDA PlayerData+SY
-	ASL
-	ASL
-	ASL
-	ORA GuyFallTimer
-	EOR #$FF
-	STA SquareNote2
-	LDA #$14
-	STA SquareCtrl2
-
-	JMP Forever
-
+	
 DrawMovables:
 	LDY #$0
 	LDA (displaylist_zp), y ;load width
@@ -920,9 +942,14 @@ KeyUpdate:
 SpringUpdate:
 	LDX #$FC
 	JSR CheckIntersectPlayer
-	BEQ *+5
-	STX PlayerData+SY
+	BNE *+5
 	JMP UpdateDone
+	STX PlayerData+SY
+	LDA #<SFX_Boing
+	STA sfx_ch2
+	LDA #>SFX_Boing
+	STA sfx_ch2+1
+
 
 NullUpdate:
 	JMP UpdateDone
@@ -977,6 +1004,24 @@ BounceAnim:
 	.db $FF, $00, $00, $00, $00, $00, $00, $00, $FF, $00, $00, $00, $00, $00, $00, $00
 	.db $01, $00, $00, $00, $00, $00, $00, $00, $01, $00, $00, $00, $00, $00, $00, $00
 
+SFX:
+SFX_None:
+	.db $00
+	;jump sound 27 frames long
+	;down from C to A over 9 frames, then back up to A2 over 18 frames
+	;D604 is 130.07Hz
+	;FD04 is 110.10Hz
+	;7E04 is 220.20Hz
+SFX_Boing:
+	.db $D6, $03, $DA, $03, $DE, $03, $E3, $03, $E7, $03, $EB, $03, $F0, $03, $F4, $03, $F8, $03
+	.db $FD, $0B, $F6, $0B, $EF, $0B, $E8, $13, $E1, $13, $DA, $13, $D3, $1B, $CC, $1B, $C5, $1B
+	.db $BE, $23, $B7, $23, $B0, $23, $A9, $2B, $A2, $2B, $9B, $2B, $94, $33, $8D, $33, $86, $33
+	.db $7F, $33, $7F, $3B, $00, $00
+SFX_Jump:
+	.db $FD, $0A, $F6, $0A, $EF, $0A, $E8, $12, $E1, $12, $DA, $12, $D3, $1A, $CC, $1A, $C5, $1A
+	.db $BE, $22, $B7, $22, $B0, $22, $A9, $2A, $A2, $2A, $9B, $2A, $94, $32, $8D, $32, $86, $32
+	.db $7F, $32, $7F, $3A, $00, $00
+
 Movables:
 	.db $0F, $10, GuyStanding, GuyAnimRow, $10, $40, $00, $20
 	.db $00, $00, $00, $00, $00, $00, $00, $00
@@ -1016,10 +1061,12 @@ ItemTemplates:
 Sprites:
 	.incbin "gamesprites.gtg.deflate"
 
+AudioSamples:
+	.incbin "oopsAllZeroes.bin.deflate"
+
 NoteFreqs:
 	.db $D4, $C8, $BD, $B2, $A8, $9E, $95, $8D, $85, $7D, $76, $70, $00, $00, $00, $00
 
-	.align 8
 MusicData:
 	.incbin "koro.dat"
 Maps:
