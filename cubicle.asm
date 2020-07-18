@@ -7,9 +7,6 @@ GuyFrame = $35
 GuyFallTimer = $36
 GuyGroundState = $37
 
-MusicIndex = $38
-MusicFrame = $39
-
 GamePad1BufferA = $3A
 GamePad1BufferB = $3B
 Old_GamePad1BufferA = $3C
@@ -17,14 +14,30 @@ Old_GamePad1BufferB = $3D
 Dif_GamePad1BufferA = $3E
 Dif_GamePad1BufferB = $3F
 
-MusicPtrLow = $7E
-MusicPtrHigh = $7F
-Square1Octave = $80
-Square1Volume = $81
-Square1Decay = $82
-NoteLength = $83
-Square2LastNote = $84
-Square2LastCtrl = $85
+
+OctaveBuf      = $50
+MusicPtr_Ch1   = $51 ; 52
+MusicPtr_Ch2   = $53 ; 54
+MusicPtr_Ch3   = $55 ; 56
+MusicPtr_Ch4   = $57 ; 58
+MusicNext_Ch1  = $59
+MusicNext_Ch2  = $5A
+MusicNext_Ch3  = $5B
+MusicNext_Ch4  = $5C
+MusicEnvI_Ch1   = $5D
+MusicEnvI_Ch2   = $5E
+MusicEnvI_Ch3   = $5F
+MusicEnvI_Ch4   = $60
+MusicEnvP_Ch1 = $61 ; 62
+MusicEnvP_Ch2 = $63 ; 64
+MusicEnvP_Ch3 = $65 ; 66
+MusicEnvP_Ch4 = $67 ; 68
+MusicStart_Ch1 = $69 ; 6A
+MusicStart_Ch2 = $6B ; 6C
+MusicStart_Ch3 = $6D ; 6E
+MusicStart_Ch4 = $6F ; 70
+MusicTicksTotal = $71 ; 72
+MusicTicksLeft = $73 ; 74
 
 DMA_Flags_buffer = $90
 
@@ -134,11 +147,42 @@ StartupWait:
 	STA NoiseCtrl
 	STA WaveCtrl
 
-	STZ MusicIndex
 	STZ GuyFrame
 	STZ GuyGroundState
 	LDA #1
 	STA GuyFallTimer
+
+	LDA #<InstrumEnv1
+	STA MusicEnvP_Ch1
+	LDA #>InstrumEnv1
+	STA MusicEnvP_Ch1+1
+	LDA #$01
+	STA MusicNext_Ch1
+
+	LDA #<InstrumEnv1
+	STA MusicEnvP_Ch2
+	LDA #>InstrumEnv1
+	STA MusicEnvP_Ch2+1
+	LDA #$01
+	STA MusicNext_Ch2
+
+	LDA #<MusicData_Ch1
+	STA MusicStart_Ch1
+	LDA #>MusicData_Ch1
+	STA MusicStart_Ch1+1
+
+	LDA #<MusicData_Ch2
+	STA MusicStart_Ch2
+	LDA #>MusicData_Ch2
+	STA MusicStart_Ch2+1
+
+	LDA MusicLength
+	STA MusicTicksTotal
+	LDA MusicLength+1
+	STA MusicTicksTotal+1
+
+	STZ MusicTicksLeft
+	STZ MusicTicksLeft+1
 
 	;Fill wavetable with zero
 	LDA #<AudioSamples
@@ -203,7 +247,6 @@ StartupWait:
 
 Forever:
 	JSR AwaitVSync
-	INC MusicFrame
 	JSR UpdateInputs
 
 	;Swap video and draw target buffers
@@ -554,36 +597,104 @@ DontNextScreen:
 	WAI
 
 
-	;;;;;;;;;handle sounds
-	LDA MusicFrame
-	AND #$0F
-	BNE HoldNote
-	LDY MusicIndex
-	LDA MusicData, y
+	;;;;Do music
+
+	LDA MusicTicksLeft
+	BNE DontLoopMusic
+	LDA MusicTicksLeft+1
+	BEQ RestartMusic
+	DEC MusicTicksLeft+1
+DontLoopMusic:
+	DEC MusicTicksLeft
+	JMP Music_SetCh1
+
+RestartMusic:
+	LDA MusicTicksTotal
+	STA MusicTicksLeft
+	LDA MusicTicksTotal+1
+	STA MusicTicksLeft+1
+	LDA MusicStart_Ch1
+	STA MusicPtr_Ch1
+	LDA MusicStart_Ch1+1
+	STA MusicPtr_Ch1+1
+	LDA #1
+	STA MusicNext_Ch1
+	LDA MusicStart_Ch2
+	STA MusicPtr_Ch2
+	LDA MusicStart_Ch2+1
+	STA MusicPtr_Ch2+1
+	LDA #1
+	STA MusicNext_Ch2
+
+Music_SetCh1:
+	INC MusicEnvI_Ch1
+	DEC MusicNext_Ch1
+	BNE HoldNote_Ch1
+	STZ MusicEnvI_Ch1
+	INC MusicPtr_Ch1
 	BNE *+4
+	INC MusicPtr_Ch1+1
 	LDY #0
-	LDA MusicData, y
+	LDA (MusicPtr_Ch1), y
+	STA MusicNext_Ch1
+	INC MusicPtr_Ch1
+	BNE *+4
+	INC MusicPtr_Ch1+1
+HoldNote_Ch1:
+	LDY #0
+	LDA (MusicPtr_Ch1), y
 	JSR SetFreqAndOctave
+	STA temp ; stash F number for note
+	LDY MusicEnvI_Ch1
+	LDA (MusicEnvP_Ch1), y
+	PHA
+	AND #$0F ;First four bits are pitch bend envelope
+	CLC
+	ADC #$F8 ;Midpoint is $08
+	CLC
+	ADC temp
 	STA SquareNote1
-	LDA Square1Octave
-	AND #7
-	ORA #$10
+	PLA
+	AND #$70
+	LSR
+	ORA OctaveBuf
 	STA SquareCtrl1
-	INY
-	LDA MusicData, y
+
+Music_SetCh2:
+	INC MusicEnvI_Ch2
+	DEC MusicNext_Ch2
+	BNE HoldNote_Ch2
+	STZ MusicEnvI_Ch2
+	INC MusicPtr_Ch2
+	BNE *+4
+	INC MusicPtr_Ch2+1
+	LDY #0
+	LDA (MusicPtr_Ch2), y
+	STA MusicNext_Ch2
+	INC MusicPtr_Ch2
+	BNE *+4
+	INC MusicPtr_Ch2+1
+HoldNote_Ch2:
+	LDY #0
+	LDA (MusicPtr_Ch2), y
 	JSR SetFreqAndOctave
-	STA Square2LastNote
+	STA temp ; stash F number for note
+	LDY MusicEnvI_Ch2
+	LDA (MusicEnvP_Ch2), y
+	PHA
+	AND #$0F ;First four bits are pitch bend envelope
+	CLC
+	ADC #$F8 ;Midpoint is $08
+	CLC
+	ADC temp
 	STA SquareNote2
-	LDA Square1Octave
-	AND #7
-	ORA #$10
-	STA Square2LastCtrl
+	PLA
+	AND #$70
+	LSR
+	ORA OctaveBuf
 	STA SquareCtrl2
-	INY
-	STY MusicIndex
-HoldNote:
 
-
+	;;;Walking sound
 	LDY #$3F
 	LDA GuyFrame
 	CMP #1
@@ -591,6 +702,8 @@ HoldNote:
 	LDY #$53
 	STY NoiseCtrl
 
+
+	;;;SFX, channel 2
 	LDY #0
 	LDA (sfx_ch2), y
 	BEQ NoSFX2
@@ -605,10 +718,6 @@ HoldNote:
 	INC sfx_ch2+1
 	JMP Forever
 NoSFX2:
-	LDA Square2LastNote
-	STA SquareNote2
-	LDA Square2LastCtrl
-	STA SquareCtrl2
 	JMP Forever
 	
 DrawMovables:
@@ -852,7 +961,7 @@ UpdateInputs:
 
 SetFreqAndOctave:
 	;This routine takes the command byte from the Accumulator and sets
-	;the Accumulator to the pitch byte and the Square1Octave var to the corresponding octave (0-3)
+	;the Accumulator to the pitch byte and the OctaveBuf var to the corresponding octave (0-3)
 	;Uses the X register
 	TAX
 	AND #112
@@ -865,7 +974,7 @@ SetFreqAndOctave:
 	CLC
 	SBC $0
 	AND #7
-	STA Square1Octave
+	STA OctaveBuf
 	TXA
 	AND #15
 	TAX
@@ -1067,8 +1176,42 @@ AudioSamples:
 NoteFreqs:
 	.db $D4, $C8, $BD, $B2, $A8, $9E, $95, $8D, $85, $7D, $76, $70, $00, $00, $00, $00
 
-MusicData:
-	.incbin "koro.dat"
+
+InstrumEnv1:
+	.db $6A, $39, $08, $08, $08
+	.db $08, $08, $08, $18, $28
+	.db $38, $48, $58, $68, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+
+MusicLength: .dw $0200
+
+;;A 8 A 5 1 5 a
+;;A 8 A 5 1 5 a
+;+a 0 1 1 a 0 0 8 a a 5 a
+MusicData_Ch1:
+	.db $00
+	.db $10,$5A, $10,$58, $10,$5A, $10,$55, $10,$51, $08,$55, $28,$4A ;length 80
+	.db $10,$5A, $10,$58, $10,$5A, $10,$55, $10,$51, $08,$55, $28,$4A ;length 80
+	.db $10,$5A, $10,$60, $20,$61, $10,$61, $10,$5A, $20,$60, $10,$60
+	.db $10,$58, $20,$5A, $10,$5A, $10,$55, $20,$5A ;length 100
+;;a A 5 a A 5 a A 5 a 1 5 A
+;;8 3 _8
+;;6 1 _6
+MusicData_Ch2:
+	.db $00
+	.db $08,$2A, $08,$31, $08,$35, $08,$3A, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35 ; length 80
+	.db $08,$2A, $08,$31, $08,$35, $08,$3A, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35 ; length 80
+	.db $08,$2A, $08,$31, $08,$35, $08,$3A, $10,$28, $08,$38, $08,$33, $10,$28, $08,$38, $08,$33, $10,$26, $08,$36, $08,$31 ; length 80
+	.db $10,$26, $08,$36, $08,$31, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35 ; length 80
+
 Maps:
 	.incbin "tiled\testmap1_merged.map.deflate"
 
