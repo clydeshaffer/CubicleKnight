@@ -159,9 +159,9 @@ StartupWait:
 	LDA #$01
 	STA MusicNext_Ch1
 
-	LDA #<InstrumEnv1
+	LDA #<InstrumEnv2
 	STA MusicEnvP_Ch2
-	LDA #>InstrumEnv1
+	LDA #>InstrumEnv2
 	STA MusicEnvP_Ch2+1
 	LDA #$01
 	STA MusicNext_Ch2
@@ -1178,7 +1178,20 @@ NoteFreqs:
 
 
 InstrumEnv1:
-	.db $6A, $39, $08, $08, $08
+	.db $08, $08, $08, $08, $28
+	.db $48, $68, $18, $38, $58
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+	.db $78, $78, $78, $78, $78
+InstrumEnv2:
+	.db $6F, $3C, $08, $08, $08
 	.db $08, $08, $08, $18, $28
 	.db $38, $48, $58, $68, $78
 	.db $78, $78, $78, $78, $78
