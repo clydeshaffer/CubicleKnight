@@ -2,10 +2,14 @@ temp = $10
 
 gameobject = $20
 
-FrameFlag = $34
+FrameFlag = $30
+
+HP_Remaining = $33
+Keys_Collected = $34
 GuyFrame = $35
 GuyFallTimer = $36
 GuyGroundState = $37
+GuyPainTimer = $38
 
 GamePad1BufferA = $3A
 GamePad1BufferB = $3B
@@ -57,6 +61,7 @@ inflate_data = $0200 ; until $04FD
 
 PlayerData = $0500
 Items = $0510
+LoadedMusicFirstPage = $0600
 
 LoadedMapsFirstPage = $1000 ; through $2000
 StartMap = $1C00
@@ -105,6 +110,8 @@ FuncNum = 6
 SY = 7
 EntData = 7
 
+Ch1Offset = 4
+
 GuyAnimRow = $20 ;use as number not as address
 GuyStanding = $0
 GuyJumping = $40
@@ -147,42 +154,28 @@ StartupWait:
 	STA NoiseCtrl
 	STA WaveCtrl
 
+	LDA #3
+	STA HP_Remaining
+	STZ Keys_Collected
 	STZ GuyFrame
 	STZ GuyGroundState
+	STZ GuyPainTimer
 	LDA #1
 	STA GuyFallTimer
 
-	LDA #<InstrumEnv1
-	STA MusicEnvP_Ch1
-	LDA #>InstrumEnv1
-	STA MusicEnvP_Ch1+1
-	LDA #$01
-	STA MusicNext_Ch1
+	STZ GamePad1BufferA
+	STZ GamePad1BufferB
 
-	LDA #<InstrumEnv2
-	STA MusicEnvP_Ch2
-	LDA #>InstrumEnv2
-	STA MusicEnvP_Ch2+1
-	LDA #$01
-	STA MusicNext_Ch2
+	STZ MusicEnvI_Ch1
+	STZ MusicEnvI_Ch2
+	STZ MusicEnvI_Ch3
+	STZ MusicEnvI_Ch4
 
-	LDA #<MusicData_Ch1
-	STA MusicStart_Ch1
-	LDA #>MusicData_Ch1
-	STA MusicStart_Ch1+1
-
-	LDA #<MusicData_Ch2
-	STA MusicStart_Ch2
-	LDA #>MusicData_Ch2
-	STA MusicStart_Ch2+1
-
-	LDA MusicLength
-	STA MusicTicksTotal
-	LDA MusicLength+1
-	STA MusicTicksTotal+1
-
-	STZ MusicTicksLeft
-	STZ MusicTicksLeft+1
+	LDA #<MusicPkg_Main
+	STA inflate_zp
+	LDA #>MusicPkg_Main
+	STA inflate_zp+1
+	JSR LoadMusic
 
 	;Fill wavetable with zero
 	LDA #<AudioSamples
@@ -226,9 +219,15 @@ StartupWait:
 	LDA #>StartMap
 	STA current_tilemap+1
 	LDA #<SFX_None
+	STA sfx_ch1
 	STA sfx_ch2
+	STA sfx_ch3
+	STA sfx_ch4
 	LDA #>SFX_None
+	STA sfx_ch1+1
 	STA sfx_ch2+1
+	STA sfx_ch3+1
+	STA sfx_ch4+1
 	
 	;Copy movables data into RAM
 	LDA #<Movables
@@ -262,16 +261,20 @@ Forever:
 	STA DMA_Flags
 	JSR DrawTilemap
 
+	LDA HP_Remaining
+	BNE PostDeathExplosionSpawn
+	LDA GuyPainTimer
+	CMP #$FF
+	BNE PostDeathExplosionSpawn
+	JSR SpawnItems
+PostDeathExplosionSpawn:
+
+	LDA GuyPainTimer
+	BNE SkipAnimReset
 	STZ PlayerData+SX ;zero out X speed
 	LDA #GuyStanding
 	STA PlayerData+GX
-	LDA GamePad2
-	LDA GamePad1
-	EOR #$FF
-	STA GamePad1BufferA
-	LDA GamePad1
-	EOR #$FF
-	STA GamePad1BufferB
+	LDA GamePad1BufferB
 	AND #(INPUT_MASK_LEFT | INPUT_MASK_RIGHT)
 	BEQ SkipInput
 	LDY GuyFrame
@@ -529,6 +532,8 @@ PrevScreen:
 	JSR SpawnItems
 DontNextScreen:
 
+	LDA HP_Remaining
+	BEQ SkipDrawGuy
 
 	CLC
 	LDA PlayerData+SX
@@ -542,6 +547,9 @@ DontNextScreen:
 	;AND #$7F
 	STA PlayerData+VY
 
+	LDA GuyPainTimer
+	AND #1
+	BNE SkipDrawGuy
 	;Draw player object
 	LDA DMA_Flags_buffer
 	ORA #%10000000
@@ -552,6 +560,11 @@ DontNextScreen:
 	LDA #>PlayerData
 	STA displaylist_zp+1
 	JSR DrawMovables
+
+SkipDrawGuy:
+	LDA GuyPainTimer
+	BEQ *+4
+	DEC GuyPainTimer
 
 	LDA #<Items
 	STA displaylist_zp
@@ -569,6 +582,8 @@ DontNextScreen:
 	LDA #>Items
 	STA displaylist_zp+1
 	JSR DrawMovables
+
+	JSR DrawUI
 
 	;Set border pixels to black
 	LDA DMA_Flags_buffer
@@ -627,6 +642,10 @@ RestartMusic:
 	STA MusicNext_Ch2
 
 Music_SetCh1:
+	LDY MusicEnvI_Ch1
+	LDA (MusicEnvP_Ch1), y
+	AND #$80
+	BNE *+4
 	INC MusicEnvI_Ch1
 	DEC MusicNext_Ch1
 	BNE HoldNote_Ch1
@@ -643,6 +662,7 @@ Music_SetCh1:
 HoldNote_Ch1:
 	LDY #0
 	LDA (MusicPtr_Ch1), y
+	BEQ Rest_Ch1
 	JSR SetFreqAndOctave
 	STA temp ; stash F number for note
 	LDY MusicEnvI_Ch1
@@ -660,7 +680,17 @@ HoldNote_Ch1:
 	ORA OctaveBuf
 	STA SquareCtrl1
 
+	JMP Music_SetCh2
+Rest_Ch1:
+	STZ SquareNote1
+	LDA #63
+	STA SquareCtrl1
+
 Music_SetCh2:
+	LDY MusicEnvI_Ch2
+	LDA (MusicEnvP_Ch2), y
+	AND #$80
+	BNE *+4
 	INC MusicEnvI_Ch2
 	DEC MusicNext_Ch2
 	BNE HoldNote_Ch2
@@ -677,6 +707,7 @@ Music_SetCh2:
 HoldNote_Ch2:
 	LDY #0
 	LDA (MusicPtr_Ch2), y
+	BEQ Rest_Ch2
 	JSR SetFreqAndOctave
 	STA temp ; stash F number for note
 	LDY MusicEnvI_Ch2
@@ -694,6 +725,14 @@ HoldNote_Ch2:
 	ORA OctaveBuf
 	STA SquareCtrl2
 
+	JMP MusicDone
+Rest_Ch2:
+	STZ SquareNote2
+	LDA #63
+	STA SquareCtrl2
+
+MusicDone:
+
 	;;;Walking sound
 	LDY #$3F
 	LDA GuyFrame
@@ -702,6 +741,22 @@ HoldNote_Ch2:
 	LDY #$53
 	STY NoiseCtrl
 
+	;not used, commenting out to save space for now
+	;;;SFX, channel 1
+	;LDY #0
+	;LDA (sfx_ch1), y
+	;BEQ NoSFX1
+	;STA SquareNote1
+	;INC sfx_ch1
+	;BNE *+4
+	;INC sfx_ch1+1
+	;LDA (sfx_ch1), y
+	;STA SquareCtrl1
+	;INC sfx_ch1
+	;BNE *+4
+	;INC sfx_ch1+1
+	;JMP Forever
+NoSFX1:
 
 	;;;SFX, channel 2
 	LDY #0
@@ -718,8 +773,78 @@ HoldNote_Ch2:
 	INC sfx_ch2+1
 	JMP Forever
 NoSFX2:
+
+	;;;SFX, channel 3
+	LDY #0
+	LDA (sfx_ch3), y
+	BEQ NoSFX3
+	STA NoiseCtrl
+	INC sfx_ch3
+	BNE *+4
+	INC sfx_ch3+1
 	JMP Forever
-	
+NoSFX3:
+
+
+	JMP Forever ;;;;;actual bottom of frame update loop
+
+DrawUI:
+	LDY HP_Remaining
+	BEQ DrawKeys
+DrawHP:
+	LDA #$07
+	STA DMA_WIDTH
+	LDA #$08
+	STA DMA_HEIGHT
+	LDA #$60
+	STA DMA_GX
+	LDA #$70
+	STA DMA_GY
+	TYA
+	ASL
+	ASL
+	ASL
+	CLC
+	ADC #252
+	STA DMA_VX
+	LDA #$08
+	STA DMA_VY
+	LDA #1
+	STA DMA_Status
+	WAI
+	DEY
+	BNE DrawHP
+
+DrawKeys:
+	LDY Keys_Collected
+	BNE DrawKeys+5
+	RTS
+
+	LDA #$07
+	STA DMA_WIDTH
+	LDA #$08
+	STA DMA_HEIGHT
+	LDA #$68
+	STA DMA_GX
+	LDA #$70
+	STA DMA_GY
+	TYA
+	ASL
+	ASL
+	ASL
+	CLC
+	ADC #252
+	STA DMA_VX
+	LDA #$10
+	STA DMA_VY
+	LDA #1
+	STA DMA_Status
+	WAI
+	DEY
+	BNE DrawKeys+5
+	RTS
+
+
 DrawMovables:
 	LDY #$0
 	LDA (displaylist_zp), y ;load width
@@ -923,6 +1048,55 @@ TilemapLoop:
 	BNE TilemapLoop
 	RTS
 
+LoadMusic:
+
+	LDA #<LoadedMusicFirstPage
+	STA inflate_zp+2
+	LDA #>LoadedMusicFirstPage
+	STA inflate_zp+3
+	JSR Inflate
+
+	LDA #<InstrumEnv1
+	STA MusicEnvP_Ch1
+	LDA #>InstrumEnv1
+	STA MusicEnvP_Ch1+1
+	LDA #$01
+	STA MusicNext_Ch1
+
+	LDA #<InstrumEnv2
+	STA MusicEnvP_Ch2
+	LDA #>InstrumEnv2
+	STA MusicEnvP_Ch2+1
+	LDA #$01
+	STA MusicNext_Ch2
+
+	;;Music pack header goes
+	;LByte HByte - song length
+	;LByte HByte - add to LoadedMusicFirstPage to get ch2 data
+
+	LDA #<(LoadedMusicFirstPage+4)
+	STA MusicStart_Ch1
+	LDA #>(LoadedMusicFirstPage+4)
+	STA MusicStart_Ch1+1
+
+	LDA #<LoadedMusicFirstPage
+	CLC
+	ADC LoadedMusicFirstPage+2 ;assuming here that the low byte of LoadedMusicFirstPage ptr is 00
+	STA MusicStart_Ch2
+	LDA #>LoadedMusicFirstPage
+	CLC
+	ADC LoadedMusicFirstPage+3
+	STA MusicStart_Ch2+1
+
+	LDA LoadedMusicFirstPage
+	STA MusicTicksTotal
+	LDA LoadedMusicFirstPage+1
+	STA MusicTicksTotal+1
+
+	STZ MusicTicksLeft
+	STZ MusicTicksLeft+1
+	RTS
+
 CopyPage:
 	LDA (displaylist_zp), y
 	STA (displaylist_zp+2), y
@@ -1017,6 +1191,7 @@ LizardMove:
 	ADC temp
 	STA gameobject+VX
 
+	JSR DoObstacleCheck
 	JMP UpdateDone
 
 BurgerUpdate:
@@ -1039,13 +1214,40 @@ BurgerUpdate:
 	STA gameobject+GX
 	LDA #$FF
 	STA gameobject+GY
+	LDA #<SFX_Burger
+	STA sfx_ch2
+	LDA #>SFX_Burger
+	STA sfx_ch2+1
 	JSR RemoveMe
+	INC HP_Remaining
 	JMP UpdateDone
 
 KeyUpdate:
+	INC gameobject+EntData
+	LDA gameobject+EntData
+	AND #$1F
+
+	TAX
+	LDA BounceAnim, x
+	CLC
+	ADC gameobject+VY
+	STA gameobject+VY
+
 	JSR CheckIntersectPlayer
-	BEQ *+4
-	INC gameobject+VX
+	BNE *+5
+	JMP UpdateDone
+	STZ gameobject+FuncNum
+	LDA gameobject+GX
+	ORA #$80
+	STA gameobject+GX
+	LDA #$FF
+	STA gameobject+GY
+	LDA #<SFX_Key
+	STA sfx_ch2
+	LDA #>SFX_Key
+	STA sfx_ch2+1
+	JSR RemoveMe
+	INC Keys_Collected
 	JMP UpdateDone
 
 SpringUpdate:
@@ -1058,6 +1260,158 @@ SpringUpdate:
 	STA sfx_ch2
 	LDA #>SFX_Boing
 	STA sfx_ch2+1
+	JMP UpdateDone
+
+SpikeUpdate:
+	INC gameobject+EntData
+
+	LDX #$FF
+	LDA #%01000000
+	BIT gameobject+EntData
+	BNE *+4
+	LDX #$01
+	STX temp
+	
+	LDA #%00000010
+	BIT gameobject+EntData
+	BEQ *+4
+	STZ temp
+	LDA gameobject+VY
+	CLC
+	ADC temp
+	STA gameobject+VY
+
+	JSR DoObstacleCheck
+
+	JMP UpdateDone
+
+FireUpdate:
+	INC gameobject+EntData
+
+	LDX #$FF
+	LDA #%00000100
+	BIT gameobject+EntData
+	BNE *+4
+	LDX #$01
+	STX temp
+	
+	LDA #%00000010
+	BIT gameobject+EntData
+	BEQ *+4
+	STZ temp
+	LDA gameobject+VX
+	CLC
+	ADC temp
+	STA gameobject+VX
+
+	JSR DoObstacleCheck
+
+	JMP UpdateDone
+
+DoorUpdate:
+	LDA gameobject+EntData
+	BNE DoorOnce
+	CLC
+	LDA gameobject+VX
+	ADC #$10
+	STA gameobject+VX
+	INC gameobject+EntData
+DoorOnce:
+
+	LDA gameobject+VX
+	CLC
+	ADC #2
+	AND #$7F
+	LSR
+	LSR
+	LSR
+	STA temp+2
+	LDA gameobject+VY
+	CLC
+	ADC #2
+	AND #$78
+	ASL
+	ORA temp+2
+	STA temp+2
+
+	LDA Keys_Collected
+	BNE *+7
+	JSR CheckIntersectPlayer
+	BNE *+12
+	LDA #<Str_DoorBlank
+	STA temp
+	LDA #>Str_DoorBlank
+	STA temp+1
+	BRA *+10
+	LDA #<Str_NeedKey
+	STA temp
+	LDA #>Str_NeedKey
+	STA temp+1
+
+
+	LDA current_tilemap
+	CLC
+	ADC #203
+	CLC
+	ADC temp+2
+	STA temp+2
+	LDA current_tilemap+1
+	STA temp+3
+	JSR PrintStr
+	JMP UpdateDone
+	
+ExplosionUpdate:
+	INC gameobject+EntData
+	LDA gameobject+EntData
+	CMP #15
+	BEQ ExpFrame2
+	CMP #30
+	BEQ ExpFrame3
+	CMP #45
+	BEQ ExpDone
+	JMP UpdateDone
+ExpFrame2:
+	LDA gameobject+VX
+	SEC
+	SBC #4
+	STA gameobject+VX
+	LDA gameobject+VY
+	SEC
+	SBC #4
+	STA gameobject+VY
+	LDA #88
+	STA gameobject+GX
+
+	LDA #15
+	STA gameobject+W
+	LDA #16
+	STA gameobject+H
+	JMP UpdateDone
+ExpFrame3:
+	LDA gameobject+VX
+	SEC
+	SBC #4
+	STA gameobject+VX
+	LDA gameobject+VY
+	SEC
+	SBC #4
+	STA gameobject+VY
+	LDA #104
+	STA gameobject+GX
+	LDA #23
+	STA gameobject+W
+	LDA #24
+	STA gameobject+H
+	JMP UpdateDone
+ExpDone:
+	LDA #$FF
+	STA gameobject+GX
+	STA gameobject+GY
+	STZ gameobject+FuncNum
+	LDA HP_Remaining
+	BNE *+5
+	JMP RESET
+	JMP UpdateDone
 
 
 NullUpdate:
@@ -1083,23 +1437,97 @@ RemoveMe:
 	STA (current_tilemap), y
 	RTS
 
+DoObstacleCheck:
+	LDA HP_Remaining
+	BEQ DidntHitObstacle
+	LDA GuyPainTimer
+	BNE DidntHitObstacle
+	JSR CheckIntersectPlayer
+	BEQ DidntHitObstacle
+	LDA #$10
+	STA GuyPainTimer
+	LDA #<SFX_Pain
+	STA sfx_ch3
+	LDA #>SFX_Pain
+	STA sfx_ch3+1
+	DEC HP_Remaining
+	BNE *+5
+	JSR MakeExplosion
+
+	LDA PlayerData+VX
+	CMP gameobject+VX
+	BCC *+6;branch if PlayerVX < GameObjectVX
+	LDA #$01
+	BRA *+4
+	LDA #$FF
+	STA PlayerData+SX
+
+	LDA PlayerData+VY
+	CMP gameobject+VY
+	BCC *+6;branch if PlayerVY < GameObjectVY
+	LDA #$01
+	BRA *+4
+	LDA #$FF
+	STA PlayerData+SY
+
+	RTS
+DidntHitObstacle:
+	RTS
+
 CheckIntersectPlayer:
 	LDA gameobject+VX
 	SEC
 	SBC PlayerData+VX
 	JSR ABS
-	CMP #$10
+	CMP #$0E
 	BCS ReturnNoIntersect
 	LDA gameobject+VY
 	SEC
 	SBC PlayerData+VY
 	JSR ABS
-	CMP #$10
+	CMP #$0E
 	BCS ReturnNoIntersect
 	LDA #1
 	RTS
 ReturnNoIntersect:
 	LDA #0
+	RTS
+
+MakeExplosion:
+	LDA #<SFX_Explosion
+	STA sfx_ch3
+	LDA #>SFX_Explosion
+	STA sfx_ch3+1
+	LDA #$FF
+	STA GuyPainTimer
+	LDA PlayerData+VX
+	CLC
+	ADC #2
+	AND #$7F
+	LSR
+	LSR
+	LSR
+	STA temp+2
+	LDA PlayerData+VY
+	CLC
+	ADC #2
+	AND #$78
+	ASL
+	ORA temp+2
+	TAY
+	LDA #$F6 ; explosion spawning tile
+	STA (current_tilemap), y
+	RTS
+
+;prints a null terminated bytestring (temp) to address (temp+2)
+PrintStr:
+	LDY #0
+	LDA (temp), y
+	BEQ StringDone
+	STA (temp+2), y
+	INY
+	BRA PrintStr+2
+StringDone:
 	RTS
 
 ABS:
@@ -1108,6 +1536,37 @@ ABS:
 	CLC
 	ADC #1
 	RTS
+
+UpdateFuncs:         ;id#
+	.dw NullUpdate   ;0
+	.dw LizardUpdate ;2
+	.dw BurgerUpdate ;4
+	.dw KeyUpdate    ;6
+	.dw SpringUpdate ;8
+	.dw SpikeUpdate  ;A
+	.dw DoorUpdate	 ;C
+	.dw ExplosionUpdate ;E
+	.dw FireUpdate ;10
+
+	.align 8
+ItemTemplates:
+	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
+	.db $0F, $10, $00, $40, $40, $40, $02, $00 ; Lizard
+	.db $0F, $10, $40, $40, $40, $40, $04, $00 ; Burger
+	.db $0F, $10, $20, $50, $40, $40, $06, $08 ; Key
+	.db $0F, $08, $30, $40, $40, $40, $08, $00 ; Spring
+	.db $0F, $10, $20, $40, $40, $40, $0A, $00 ; Spikeball
+	.db $0F, $10, $80, $FF, $40, $40, $0C, $00 ; Door
+	.db $07, $18, $50, $40, $40, $40, $0E, $00 ; Explosion
+	.db $0F, $10, $40, $50, $40, $40, $10, $00 ; Fire
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 
 BounceAnim:
 	.db $FF, $00, $00, $00, $00, $00, $00, $00, $FF, $00, $00, $00, $00, $00, $00, $00
@@ -1130,6 +1589,17 @@ SFX_Jump:
 	.db $FD, $0A, $F6, $0A, $EF, $0A, $E8, $12, $E1, $12, $DA, $12, $D3, $1A, $CC, $1A, $C5, $1A
 	.db $BE, $22, $B7, $22, $B0, $22, $A9, $2A, $A2, $2A, $9B, $2A, $94, $32, $8D, $32, $86, $32
 	.db $7F, $32, $7F, $3A, $00, $00
+SFX_Burger:
+	.db $D6, $53, $DA, $33, $DE, $13, $E3, $43, $E7, $23, $EB, $13, $F0, $33, $F4, $13, $F8, $03, $00
+SFX_Key:
+	.db $3F,$01, $3F,$11, $3F,$21, $3F,$2B, $40,$01, $40,$11, $3F,$01, $3F,$11, $3F,$21, $3F,$2B, $3F,$31, $3F,$3B, $00, $00
+SFX_Explosion:
+	.db $C1, $C2, $C3, $C4, $C5, $C6, $C7, $C8, $C9, $CA, $CB, $CC, $CD, $CE, $CF
+	.db $D1, $D2, $D3, $D4, $D5, $D6, $D7, $D8, $D9, $DA, $DB, $DC, $DD, $DE, $DF
+	.db $E1, $E2, $E3, $E4, $E5, $E6, $E7, $E8, $E9, $EA, $EB, $EC, $ED, $EE, $EF
+	.db $00, $00
+SFX_Pain:
+	.db $C0, $C2, $C3, $C4, $C5, $C6, $C7, $C8, $00
 
 Movables:
 	.db $0F, $10, GuyStanding, GuyAnimRow, $10, $40, $00, $20
@@ -1141,34 +1611,13 @@ Movables:
 GuyWalkCycle:
 	.db $10, $10, $10, $20, $20, $20, $30, $30, $30, $FF
 
-UpdateFuncs:         ;id#
-	.dw NullUpdate   ;0
-	.dw LizardUpdate ;2
-	.dw BurgerUpdate ;4
-	.dw KeyUpdate    ;6
-	.dw SpringUpdate ;8
-
-ItemTemplates:
-	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
-	.db $0F, $10, $00, $40, $40, $40, $02, $00 ; Lizard
-	.db $0F, $10, $40, $40, $40, $40, $04, $00 ; Burger
-	.db $0F, $10, $20, $50, $40, $40, $04, $08 ; Key
-	.db $0F, $08, $30, $40, $40, $40, $08, $00 ; Spring
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+Str_NeedKey:
+	.db $D7, $CE, $CE, $CD, $DC, $EF, $D4, $CE, $E2, $E6, $00
+Str_DoorBlank:
+	.db $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $EF, $00
 
 Sprites:
-	.incbin "gamesprites.gtg.deflate"
+	.incbin "sprites/gamesprites.gtg.deflate"
 
 AudioSamples:
 	.incbin "oopsAllZeroes.bin.deflate"
@@ -1178,52 +1627,19 @@ NoteFreqs:
 
 
 InstrumEnv1:
-	.db $08, $08, $08, $08, $28
-	.db $48, $68, $18, $38, $58
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
+	.db $08, $08, $08, $08, $18
+	.db $28, $38, $48, $58, $68
+	.db $F8
 InstrumEnv2:
-	.db $6F, $3C, $08, $08, $08
-	.db $08, $08, $08, $18, $28
-	.db $38, $48, $58, $68, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
-	.db $78, $78, $78, $78, $78
+	.db $1F, $1C, $18, $18, $18
+	.db $28, $28, $38, $38, $48
+	.db $48, $48, $58, $58, $58
+	.db $58, $68, $68, $68, $68
+	.db $F8
 
-MusicLength: .dw $0200
-
-;;A 8 A 5 1 5 a
-;;A 8 A 5 1 5 a
-;+a 0 1 1 a 0 0 8 a a 5 a
-MusicData_Ch1:
-	.db $00
-	.db $10,$5A, $10,$58, $10,$5A, $10,$55, $10,$51, $08,$55, $28,$4A ;length 80
-	.db $10,$5A, $10,$58, $10,$5A, $10,$55, $10,$51, $08,$55, $28,$4A ;length 80
-	.db $10,$5A, $10,$60, $20,$61, $10,$61, $10,$5A, $20,$60, $10,$60
-	.db $10,$58, $20,$5A, $10,$5A, $10,$55, $20,$5A ;length 100
-;;a A 5 a A 5 a A 5 a 1 5 A
-;;8 3 _8
-;;6 1 _6
-MusicData_Ch2:
-	.db $00
-	.db $08,$2A, $08,$31, $08,$35, $08,$3A, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35 ; length 80
-	.db $08,$2A, $08,$31, $08,$35, $08,$3A, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35 ; length 80
-	.db $08,$2A, $08,$31, $08,$35, $08,$3A, $10,$28, $08,$38, $08,$33, $10,$28, $08,$38, $08,$33, $10,$26, $08,$36, $08,$31 ; length 80
-	.db $10,$26, $08,$36, $08,$31, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35, $10,$2A, $08,$3A, $08,$35 ; length 80
+MusicPkg_Main:
+	.incbin "music\cubeknight_alltracks.gtm.deflate"
+	
 
 Maps:
 	.incbin "tiled\testmap1_merged.map.deflate"
