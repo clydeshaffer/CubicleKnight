@@ -2,7 +2,7 @@ var fs = require('fs');
 
 var filename = process.argv[2];
 
-var fileLines = fs.readFileSync(filename, 'utf8').split("\n");
+var fileLines = fs.readFileSync(filename, 'utf8').split("\n").filter((s)=>s.length>0);
 
 var map_h = fileLines.length;
 var map_w = fileLines[0].split(",").length;
