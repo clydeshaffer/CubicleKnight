@@ -3,6 +3,7 @@ temp = $10
 gameobject = $20
 
 FrameFlag = $30
+BGColor = $31
 
 HP_Remaining = $33
 Keys_Collected = $34
@@ -10,6 +11,7 @@ GuyFrame = $35
 GuyFallTimer = $36
 GuyGroundState = $37
 GuyPainTimer = $38
+GameStarted = $39
 
 GamePad1BufferA = $3A
 GamePad1BufferB = $3B
@@ -141,6 +143,8 @@ StartupWait:
 	DEY
 	BNE StartupWait
 
+	LDA #$FF
+	STA BGColor
 
 	;init audio registers to do nothing
 	LDA #0
@@ -154,8 +158,8 @@ StartupWait:
 	STA NoiseCtrl
 	STA WaveCtrl
 
-	LDA #3
-	STA HP_Remaining
+	STZ GameStarted
+	STZ HP_Remaining
 	STZ Keys_Collected
 	STZ GuyFrame
 	STZ GuyGroundState
@@ -203,17 +207,6 @@ StartupWait:
 	STA inflate_zp+3
 	JSR Inflate
 
-	;decomprss map data
-	LDA #<Maps
-	STA inflate_zp
-	LDA #>Maps
-	STA inflate_zp+1
-	LDA #<LoadedMapsFirstPage
-	STA inflate_zp+2
-	LDA #>LoadedMapsFirstPage
-	STA inflate_zp+3
-	JSR Inflate
-
 	LDA #<StartMap
 	STA current_tilemap
 	LDA #>StartMap
@@ -228,6 +221,16 @@ StartupWait:
 	STA sfx_ch2+1
 	STA sfx_ch3+1
 	STA sfx_ch4+1
+
+	LDA #<TitleScreen
+	STA inflate_zp
+	LDA #>TitleScreen
+	STA inflate_zp+1
+	LDA current_tilemap
+	STA inflate_zp+2
+	LDA current_tilemap+1
+	STA inflate_zp+3
+	JSR Inflate
 	
 	;Copy movables data into RAM
 	LDA #<Movables
@@ -248,19 +251,49 @@ Forever:
 	JSR AwaitVSync
 	JSR UpdateInputs
 
+	LDA GameStarted
+	BNE GameAlreadyStarted
+	LDA #INPUT_MASK_START
+	BIT GamePad1BufferA
+	BEQ GameAlreadyStarted
+	LDA #1
+	STA GameStarted
+	LDA #3
+	STA HP_Remaining
+	;decomprss map data
+	LDA #<Maps
+	STA inflate_zp
+	LDA #>Maps
+	STA inflate_zp+1
+	LDA #<LoadedMapsFirstPage
+	STA inflate_zp+2
+	LDA #>LoadedMapsFirstPage
+	STA inflate_zp+3
+	JSR Inflate
+GameAlreadyStarted:
+
 	;Swap video and draw target buffers
 	LDA DMA_Flags_buffer
 	EOR #%00010010
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 
-	;draw current tilemap
 	LDA DMA_Flags_buffer
 	AND #%01111111
 	STA DMA_Flags_buffer
 	STA DMA_Flags
+	JSR ClearScreenBGColor
+
+	;draw current tilemap
+	LDA DMA_Flags_buffer
+	ORA #%10000000
+	STA DMA_Flags_buffer
+	STA DMA_Flags
 	JSR DrawTilemap
 
+	LDA GameStarted
+	BNE *+5
+	JMP SkipDrawGuy
 	LDA HP_Remaining
 	BNE PostDeathExplosionSpawn
 	LDA GuyPainTimer
@@ -1015,9 +1048,27 @@ SpawnItemsNextTile:
 	STA (temp), y
 	RTS
 
-DrawTilemap:
-	LDA #$08
+
+ClearScreenBGColor:
+	LDA #$7F
 	STA DMA_WIDTH
+	STA DMA_HEIGHT
+	STZ DMA_VX
+	STZ DMA_VY
+	LDA #$80
+	STA DMA_GX
+	STZ DMA_GY
+	LDA BGColor
+	STA DMA_Color
+	LDA #1
+	STA DMA_Status
+	WAI
+	RTS
+
+DrawTilemap:
+	LDA #$07
+	STA DMA_WIDTH
+	LDA #$08
 	STA DMA_HEIGHT
 	LDY #$0
 TilemapLoop:
@@ -1305,6 +1356,9 @@ FireUpdate:
 	STA gameobject+VX
 
 	JSR DoObstacleCheck
+	BEQ *+7
+	LDA #$FD
+	STA PlayerData+SY
 
 	JMP UpdateDone
 
@@ -1334,19 +1388,27 @@ DoorOnce:
 	ORA temp+2
 	STA temp+2
 
-	LDA Keys_Collected
-	BNE *+7
+	
 	JSR CheckIntersectPlayer
-	BNE *+12
+	BNE DoorDetect
 	LDA #<Str_DoorBlank
 	STA temp
 	LDA #>Str_DoorBlank
 	STA temp+1
-	BRA *+10
+	BRA NoDoorDetect
+DoorDetect:
+	LDA Keys_Collected
+	BNE DoorHaveKey
 	LDA #<Str_NeedKey
 	STA temp
 	LDA #>Str_NeedKey
 	STA temp+1
+	BRA NoDoorDetect
+DoorHaveKey:
+	STZ gameobject+FuncNum
+	JSR LoadWinScreen
+	JMP UpdateDone
+NoDoorDetect:
 
 
 	LDA current_tilemap
@@ -1469,9 +1531,10 @@ DoObstacleCheck:
 	BRA *+4
 	LDA #$FF
 	STA PlayerData+SY
-
+	LDA #1
 	RTS
 DidntHitObstacle:
+	LDA #0
 	RTS
 
 CheckIntersectPlayer:
@@ -1519,6 +1582,30 @@ MakeExplosion:
 	STA (current_tilemap), y
 	RTS
 
+LoadWinScreen:
+	STZ HP_Remaining
+	STZ Keys_Collected
+
+	LDA #$22
+	STA BGColor
+
+	LDA #<WinScreen
+	STA inflate_zp
+	LDA #>WinScreen
+	STA inflate_zp+1
+	LDA current_tilemap
+	STA inflate_zp+2
+	LDA current_tilemap+1
+	STA inflate_zp+3
+	JSR Inflate
+
+	LDA #<MusicPkg_Win
+	STA inflate_zp
+	LDA #>MusicPkg_Win
+	STA inflate_zp+1
+	JSR LoadMusic
+	RTS
+
 ;prints a null terminated bytestring (temp) to address (temp+2)
 PrintStr:
 	LDY #0
@@ -1559,7 +1646,7 @@ ItemTemplates:
 	.db $0F, $10, $80, $FF, $40, $40, $0C, $00 ; Door
 	.db $07, $18, $50, $40, $40, $40, $0E, $00 ; Explosion
 	.db $0F, $10, $40, $50, $40, $40, $10, $00 ; Fire
-	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
+	.db $0F, $10, $50, $50, $40, $40, $10, $00 ; GroundSpikes
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
@@ -1639,10 +1726,16 @@ InstrumEnv2:
 
 MusicPkg_Main:
 	.incbin "music\cubeknight_alltracks.gtm.deflate"
-	
+MusicPkg_Win:
+	.incbin "music\stroll_alltracks.gtm.deflate"	
 
 Maps:
 	.incbin "tiled\testmap1_merged.map.deflate"
+TitleScreen:
+	.incbin "tiled\title_merged.map.deflate"
+WinScreen:
+	.incbin "tiled\end_merged.map.deflate"
+	
 
 NMI:
 	STZ FrameFlag
