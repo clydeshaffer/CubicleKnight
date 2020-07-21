@@ -4,7 +4,7 @@ gameobject = $20
 
 FrameFlag = $30
 BGColor = $31
-
+SharedSpringState = $32
 HP_Remaining = $33
 Keys_Collected = $34
 GuyFrame = $35
@@ -164,6 +164,7 @@ StartupWait:
 	STZ GuyFrame
 	STZ GuyGroundState
 	STZ GuyPainTimer
+	STZ SharedSpringState
 	LDA #1
 	STA GuyFallTimer
 
@@ -1074,7 +1075,7 @@ DrawTilemap:
 TilemapLoop:
 	LDA (current_tilemap), y
 	CMP #$EF
-	BEQ SkipTile
+	BCS SkipTile
 	TYA
 	AND #$0F
 	ASL
@@ -1315,6 +1316,14 @@ SpringUpdate:
 	STA sfx_ch2
 	LDA #>SFX_Boing
 	STA sfx_ch2+1
+	;set fractional part of bounce speed
+	CLC
+	LDA SharedSpringState
+	ADC #$02
+	AND #$07
+	STA SharedSpringState
+	ORA #$01
+	STA GuyFallTimer
 	JMP UpdateDone
 
 SpikeUpdate:
@@ -1648,7 +1657,7 @@ ItemTemplates:
 	.db $0F, $08, $30, $40, $40, $40, $08, $00 ; Spring
 	.db $0F, $10, $20, $40, $40, $40, $0A, $00 ; Spikeball
 	.db $0F, $10, $80, $FF, $40, $40, $0C, $00 ; Door
-	.db $07, $18, $50, $40, $40, $40, $0E, $00 ; Explosion
+	.db $07, $08, $50, $40, $40, $40, $0E, $00 ; Explosion
 	.db $0F, $10, $40, $50, $40, $40, $10, $00 ; Fire
 	.db $0F, $10, $50, $50, $40, $40, $10, $00 ; GroundSpikes
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
