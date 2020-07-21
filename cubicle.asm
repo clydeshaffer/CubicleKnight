@@ -1072,6 +1072,9 @@ DrawTilemap:
 	STA DMA_HEIGHT
 	LDY #$0
 TilemapLoop:
+	LDA (current_tilemap), y
+	CMP #$EF
+	BEQ SkipTile
 	TYA
 	AND #$0F
 	ASL
@@ -1095,6 +1098,7 @@ TilemapLoop:
 	LDA #1
 	STA DMA_Status
 	WAI
+SkipTile:
 	INY
 	BNE TilemapLoop
 	RTS
@@ -1367,7 +1371,7 @@ DoorUpdate:
 	BNE DoorOnce
 	CLC
 	LDA gameobject+VX
-	ADC #$10
+	ADC #$08
 	STA gameobject+VX
 	INC gameobject+EntData
 DoorOnce:
@@ -1413,7 +1417,7 @@ NoDoorDetect:
 
 	LDA current_tilemap
 	CLC
-	ADC #203
+	ADC #204
 	CLC
 	ADC temp+2
 	STA temp+2
