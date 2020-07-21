@@ -3,22 +3,54 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "",
+    "activeFile": "untitled.tmx",
     "expandedProjectPaths": [
     ],
+    "file.lastUsedOpenFilter": "All Files (*)",
     "fileStates": {
+        "end.tmx": {
+            "scale": 6.161029411764706,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 62.327246688148946,
+                "y": 65.73576799140709
+            }
+        },
+        "gamesprites.tsx": {
+            "scaleInDock": 3,
+            "scaleInEditor": 5.5
+        },
+        "title.tmx": {
+            "scale": 6.161029411764706,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 60.05489915264353,
+                "y": 64.11266260890321
+            }
+        },
+        "untitled.tmx": {
+            "scale": 3,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 202.99999999999997,
+                "y": 385.33333333333326
+            }
+        }
     },
-    "map.height": 64,
+    "map.height": 16,
     "map.lastUsedExportFilter": "CSV files (*.csv)",
     "map.lastUsedFormat": "tmx",
     "map.layerDataFormat": null,
     "map.tileHeight": 8,
     "map.tileWidth": 8,
-    "map.width": 64,
+    "map.width": 16,
     "openFiles": [
+        "untitled.tmx"
     ],
     "project": "cubeknight.tiled-project",
     "recentFiles": [
+        "untitled.tmx",
+        "gamesprites.tsx"
     ],
     "tileset.lastUsedFormat": "tsx",
     "tileset.tileSize": {
