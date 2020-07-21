@@ -23,8 +23,15 @@ sprites: sprites/gamesprites.bmp
 	tail -c 16384 gamesprites.bmp > gamesprites.gtg ;\
 	zopfli --deflate gamesprites.gtg
 
+cubicle.gtr.scrambled: cubicle.gtr
+	cd ../eepromProgrammer/scrambler ;\
+	./scrambler ../../CubicleKnight/cubicle.gtr ../../CubicleKnight/cubicle.gtr.scrambled
+
 flash: cubicle.gtr
 	cd ../eepromProgrammer ; node index.js /dev/ttyUSB0 ../CubicleKnight/cubicle.gtr
+
+flash_smd: cubicle.gtr.scrambled
+	cd ../eepromProgrammer ; node index.js /dev/ttyUSB0 ../CubicleKnight/cubicle.gtr.scrambled
 
 emulate: cubicle.gtr
 	../GameTankEmulator/GameTankEmulator cubicle.gtr
