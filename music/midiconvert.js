@@ -9,7 +9,7 @@ var parsedInput = parseMidi(inputFile);
 
 class GTNote {
     constructor(frames, noteNumber) {
-        this.frames = frames;
+        this.frames = Math.floor(frames);
         this.noteNumber = noteNumber;
         if(noteNumber == 0) {
             this.noteCode = 0;
@@ -24,6 +24,9 @@ class GTNote {
 console.log(parsedInput.header);
 var ticksPerBeat = parsedInput.header.ticksPerBeat;
 var framesPerBeat = 32;
+var microsecondsPerFrame = 16666.666667;
+
+var ch0 = parsedInput.tracks[0];
 var ch1 = parsedInput.tracks[1];
 var ch2 = parsedInput.tracks[2];
 
@@ -39,31 +42,60 @@ function processChannel(ch, outname) {
     var lastOff = 0;
     var biggestPause = 0;
     var notesOn = 0;
-    ch.forEach(function(evt, ind) {
-        totalTicks += evt.deltaTime;
-        if(evt.type == "noteOn") {
-            notesOn++;
-            var sinceLastOff = totalTicks - lastOff - 1;
-            if(sinceLastOff > 0) {
-                var restFrames = framesPerBeat * sinceLastOff / ticksPerBeat;
-                while(restFrames > 255) {
-                    chNotes.push(new GTNote(255, 0)); //insert a max length rest
-                    restFrames -= 255;
-                }
-                chNotes.push(new GTNote(restFrames, 0)); //insert a rest
-            }
-            noteTracker[evt.noteNumber] = totalTicks;
-        } else if(evt.type == "noteOff") {
+    var lastNoteOn = 0;
+    var timeError = 0;
+
+
+    function doNoteOff(noteNumber) {
+        if(noteTracker[noteNumber] >= 0) {
             notesOn--;
             lastOff = totalTicks;
-            var noteTicks = 1 + totalTicks - noteTracker[evt.noteNumber];
+            var noteTicks = 1 + totalTicks - noteTracker[noteNumber];
             var noteFrames = framesPerBeat * noteTicks / ticksPerBeat;
             if(noteFrames > 255) {
                 console.log("TODO: add rest after unsupportedly long notes");
             }
-            chNotes.push(new GTNote(noteFrames, evt.noteNumber));
+            var noteError = noteFrames - Math.floor(noteFrames);
+            noteFrames = Math.floor(noteFrames);
+            timeError += noteError;
+            noteFrames += Math.floor(timeError);
+            timeError -= Math.floor(timeError);
+            if(noteFrames >= 1) {
+                chNotes.push(new GTNote(noteFrames, noteNumber));
+            }
+            delete noteTracker[noteNumber];
+        }
+    }
+
+    ch.forEach(function(evt, ind) {
+        totalTicks += evt.deltaTime;
+        if(evt.type == "noteOn") {
+            if(notesOn > 0) {
+                doNoteOff(lastNoteOn);
+            }
+            notesOn++;
+            var sinceLastOff = totalTicks - lastOff - 1;
+            if(sinceLastOff >= 1) {
+                var restFrames = framesPerBeat * sinceLastOff / ticksPerBeat;
+                console.log("time error: " + timeError);
+                restFrames += Math.floor(timeError);
+                timeError -= Math.floor(timeError);
+                while(restFrames > 255) {
+                    chNotes.push(new GTNote(255, 0)); //insert a max length rest
+                    restFrames -= 255;
+                }
+                if(restFrames >= 1) {
+                    chNotes.push(new GTNote(restFrames, 0)); //insert a rest
+                }
+            }
+            noteTracker[evt.noteNumber] = totalTicks;
+            lastNoteOn = evt.noteNumber;
+        } else if(evt.type == "noteOff") {
+            doNoteOff(evt.noteNumber);
         } else if(evt.type == "endOfTrack") {
             chLength = Math.round(framesPerBeat * totalTicks / ticksPerBeat);
+        } else if (evt.type == "setTempo") {
+            framesPerBeat = Math.round(evt.microsecondsPerBeat / microsecondsPerFrame);
         }
         if(evt.deltaTime > maxDelta) {
             maxDelta = evt.deltaTime;
@@ -94,6 +126,7 @@ function processChannel(ch, outname) {
     return b;
 }
 
+processChannel(ch0, "tempo");
 var ch1b = processChannel(ch1, "ch1");
 var ch2b = processChannel(ch2, "ch2");
 
