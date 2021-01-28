@@ -20,6 +20,9 @@ Old_GamePad1BufferB = $3D
 Dif_GamePad1BufferA = $3E
 Dif_GamePad1BufferB = $3F
 
+PrintNum_X = $40
+PrintNum_Y = PrintNum_X+1
+PrintNum_N = PrintNum_X+2
 
 OctaveBuf      = $50
 MusicPtr_Ch1   = $51 ; 52
@@ -79,6 +82,17 @@ DMA_Flags = $2007
 
 GamePad1 = $2008
 GamePad2 = $2009
+
+VIA = $2800
+ORB = 0
+ORA = 1
+DDRB = 2
+DDRA = 3
+T1C = 5
+ACR = $B
+PCR = $C
+IFR = $D
+IER = $E
 
 Wavetable = $3000
 Framebuffer = $4000
@@ -143,6 +157,10 @@ StartupWait:
 	DEY
 	BNE StartupWait
 
+	LDA #$FF ;set all port B pins to OUPTUT
+	STA VIA+DDRB
+	STZ VIA+ORB
+
 	LDA #$FF
 	STA BGColor
 
@@ -194,7 +212,7 @@ StartupWait:
 	JSR Inflate
 
 	;extract graphics to graphics RAM
-	LDA #%00000000	;Activate lower page of VRAM/GRAM, CPU accesses GRAM, no IRQ, no transparency
+	LDA #%10000000	;Activate lower page of VRAM/GRAM, CPU accesses GRAM, no IRQ, no transparency
 	STA DMA_Flags
 	
 	;run INFLATE to decompress graphics
@@ -245,10 +263,11 @@ StartupWait:
 	LDY #0
 	JSR CopyPage
 
-	LDA #%01110101
+	LDA #%11110101
 	STA DMA_Flags_buffer
 
 Forever:
+    INC VIA+ORB
 	JSR AwaitVSync
 	JSR UpdateInputs
 
@@ -280,14 +299,14 @@ GameAlreadyStarted:
 	STA DMA_Flags
 
 	LDA DMA_Flags_buffer
-	AND #%01111111
+	ORA #%10000000 ;disable transparency
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	JSR ClearScreenBGColor
 
 	;draw current tilemap
 	LDA DMA_Flags_buffer
-	ORA #%10000000
+	AND #%01111111 ;enable transparency
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	JSR DrawTilemap
@@ -586,7 +605,7 @@ DontNextScreen:
 	BNE SkipDrawGuy
 	;Draw player object
 	LDA DMA_Flags_buffer
-	ORA #%10000000
+	AND #%01111111 ;enable transparency
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #<PlayerData
@@ -608,7 +627,7 @@ SkipDrawGuy:
 
 	;Draw Nonstatic Objects
 	LDA DMA_Flags_buffer
-	ORA #%10000000
+	AND #%01111111 ;enable transparency
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #<Items
@@ -619,9 +638,9 @@ SkipDrawGuy:
 
 	JSR DrawUI
 
-	;Set border pixels to black
+	;Set left border pixels to black
 	LDA DMA_Flags_buffer
-	AND #%01111111
+	ORA #%10000000 ;disable transparency
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #0
@@ -634,7 +653,33 @@ SkipDrawGuy:
 	STA DMA_GY
 	LDA #1
 	STA DMA_WIDTH
-	LDA #128
+	LDA #127
+	STA DMA_HEIGHT
+	
+	LDA #$FF
+	STA DMA_Color
+
+	;start a DMA transfer
+	LDA #1
+	STA DMA_Status
+	WAI
+
+	;Set right border pixels to black
+	LDA DMA_Flags_buffer
+	ORA #%10000000 ;disable transparency
+	STA DMA_Flags_buffer
+	STA DMA_Flags
+	LDA #127
+	STA DMA_VX
+	LDA #0
+	STA DMA_VY
+	LDA #%10000000
+	STA DMA_GX
+	LDA #%00000000
+	STA DMA_GY
+	LDA #2
+	STA DMA_WIDTH
+	LDA #127
 	STA DMA_HEIGHT
 	
 	LDA #$FF
@@ -823,6 +868,18 @@ NoSFX3:
 	JMP Forever ;;;;;actual bottom of frame update loop
 
 DrawUI:
+	LDA #$20
+	STA PrintNum_X
+	STA PrintNum_Y
+	LDA PlayerData+VX
+	STA PrintNum_N
+	JSR PrintNum
+	LDA #$28
+	STA PrintNum_Y
+	LDA PlayerData+VY
+	STA PrintNum_N
+	JSR PrintNum
+
 	LDY HP_Remaining
 	BEQ DrawKeys
 DrawHP:
@@ -1067,7 +1124,7 @@ ClearScreenBGColor:
 	RTS
 
 DrawTilemap:
-	LDA #$07
+	LDA #$08
 	STA DMA_WIDTH
 	LDA #$08
 	STA DMA_HEIGHT
@@ -1630,6 +1687,53 @@ PrintStr:
 StringDone:
 	RTS
 
+PrintNum:
+	;Print first digit
+	LDA PrintNum_X
+	STA DMA_VX
+	LDA PrintNum_Y
+	STA DMA_VY
+	LDA PrintNum_N
+	AND #$F0
+	CLC
+	LSR
+	STA DMA_GX
+	LDA #96
+	STA DMA_GY
+	LDA #8
+	STA DMA_WIDTH
+	LDA #8
+	STA DMA_HEIGHT
+	;start a DMA transfer
+	LDA #1
+	STA DMA_Status
+	WAI
+	;Print second digit
+	LDA PrintNum_X
+	CLC
+	ADC #8
+	STA DMA_VX
+	LDA PrintNum_Y
+	STA DMA_VY
+	LDA PrintNum_N
+	AND #$0F
+	CLC
+	ASL
+	ASL
+	ASL
+	STA DMA_GX
+	LDA #96
+	STA DMA_GY
+	LDA #8
+	STA DMA_WIDTH
+	LDA #8
+	STA DMA_HEIGHT
+	;start a DMA transfer
+	LDA #1
+	STA DMA_Status
+	WAI
+	RTS
+
 ABS:
 	BPL *+7
 	EOR #$FF
@@ -1702,7 +1806,7 @@ SFX_Pain:
 	.db $C0, $C2, $C3, $C4, $C5, $C6, $C7, $C8, $00
 
 Movables:
-	.db $0F, $10, GuyStanding, GuyAnimRow, $10, $40, $00, $20
+	.db $10, $10, GuyStanding, GuyAnimRow, $10, $40, $00, $20
 	.db $00, $00, $00, $00, $00, $00, $00, $00
 	.db $00, $00, $00, $00, $00, $00, $00, $00
 	.db $00, $00, $00, $00, $00, $00, $00, $00

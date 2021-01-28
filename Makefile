@@ -28,10 +28,10 @@ cubicle.gtr.scrambled: cubicle.gtr
 	./scrambler ../../CubicleKnight/cubicle.gtr ../../CubicleKnight/cubicle.gtr.scrambled
 
 flash: cubicle.gtr
-	cd ../eepromProgrammer ; node index.js /dev/ttyUSB0 ../CubicleKnight/cubicle.gtr
+	cd ../eepromProgrammer ; node index.js COM8 ../CubicleKnight/cubicle.gtr
 
 flash_smd: cubicle.gtr.scrambled
-	cd ../eepromProgrammer ; node index.js /dev/ttyUSB0 ../CubicleKnight/cubicle.gtr.scrambled
+	cd ../eepromProgrammer ; node index.js COM8 ../CubicleKnight/cubicle.gtr.scrambled
 
 emulate: cubicle.gtr
 	../GameTankEmulator/GameTankEmulator cubicle.gtr
