@@ -1,13 +1,18 @@
 #Makefile for Cubicle Knight that updates assets from source files and assembles the ROM image
 
-cubicle.gtr: music mapdata sprites
+cubicle.gtr: acp music mapdata sprites
 	vasm6502_oldstyle -dotdir -wdc02 -Fbin cubicle.asm -o cubicle.gtr
 
 music: music/cubeknight.mid music/stroll.mid
 	cd music ; node midiconvert.js cubeknight.mid ;\
-	zopfli --deflate cubeknight_alltracks.gtm ;\
+		zopfli --deflate cubeknight_alltracks.gtm ;\
 	node midiconvert.js stroll.mid ;\
 	zopfli --deflate stroll_alltracks.gtm ;\
+
+acp: acp/acp_dynawave_nosine.asm
+	cd acp ;\
+	vasm6502_oldstyle -dotdir -wdc02 -Fbin acp_dynawave_nosine.asm -o dynawave_nosine.acp ;\
+	zopfli --deflate dynawave_nosine.acp
 
 mapdata: tiled/testmap1.csv
 	cd tiled ;\

@@ -71,13 +71,9 @@ LoadedMusicFirstPage = $0600
 LoadedMapsFirstPage = $1000 ; through $2000
 StartMap = $1C00
 
-SquareNote1 = $2000
-SquareCtrl1 = $2001
-SquareNote2 = $2002
-SquareCtrl2 = $2003
-NoiseCtrl = $2004
-WaveNote = $2005
-WaveCtrl = $2006
+Audio_Reset = $2000
+Audio_NMI = $2001
+Audio_Rate = $2006
 DMA_Flags = $2007
 
 GamePad1 = $2008
@@ -94,7 +90,12 @@ PCR = $C
 IFR = $D
 IER = $E
 
-Wavetable = $3000
+ARAM = $3000
+LFSR = $04 ;$05
+FreqsH = $10
+FreqsL = $20
+Amplitudes = $30
+
 Framebuffer = $4000
 DMA_VX = $4000
 DMA_VY = $4001
@@ -157,24 +158,15 @@ StartupWait:
 	DEY
 	BNE StartupWait
 
-	LDA #$FF ;set all port B pins to OUPTUT
-	STA VIA+DDRB
-	STZ VIA+ORB
+	STZ FrameFlag
 
 	LDA #$FF
 	STA BGColor
 
-	;init audio registers to do nothing
-	LDA #0
-	STA SquareNote1
-	STA SquareNote2
-	LDA #$00
-	STA WaveNote
-	LDA #63
-	STA SquareCtrl1
-	STA SquareCtrl2
-	STA NoiseCtrl
-	STA WaveCtrl
+	;make sure audio coprocessor is stopped
+	LDA #$7F
+	STA Audio_Rate
+
 
 	STZ GameStarted
 	STZ HP_Remaining
@@ -200,16 +192,21 @@ StartupWait:
 	STA inflate_zp+1
 	JSR LoadMusic
 
-	;Fill wavetable with zero
-	LDA #<AudioSamples
+	;Unpack Audio Coprocessor Program
+	LDA #<ACProg
 	STA inflate_zp
-	LDA #>AudioSamples
+	LDA #>ACProg
 	STA inflate_zp+1
-	LDA #<Wavetable
+	LDA #<ARAM
 	STA inflate_zp+2
-	LDA #>Wavetable
+	LDA #>ARAM
 	STA inflate_zp+3
 	JSR Inflate
+	STZ Audio_Reset
+
+	;enable Audio RDY
+	LDA #$FF
+	STA Audio_Rate
 
 	;extract graphics to graphics RAM
 	LDA #%10000000	;Activate lower page of VRAM/GRAM, CPU accesses GRAM, no IRQ, no transparency
@@ -267,7 +264,6 @@ StartupWait:
 	STA DMA_Flags_buffer
 
 Forever:
-    INC VIA+ORB
 	JSR AwaitVSync
 	JSR UpdateInputs
 
@@ -690,8 +686,7 @@ SkipDrawGuy:
 	STA DMA_Status
 	WAI
 
-
-	;;;;Do music
+DoMusic:
 
 	LDA MusicTicksLeft
 	BNE DontLoopMusic
@@ -743,7 +738,7 @@ HoldNote_Ch1:
 	LDA (MusicPtr_Ch1), y
 	BEQ Rest_Ch1
 	JSR SetFreqAndOctave
-	STA temp ; stash F number for note
+	STA temp ; stash pitch low byte
 	LDY MusicEnvI_Ch1
 	LDA (MusicEnvP_Ch1), y
 	PHA
@@ -752,18 +747,19 @@ HoldNote_Ch1:
 	ADC #$F8 ;Midpoint is $08
 	CLC
 	ADC temp
-	STA SquareNote1
+	STA ARAM+FreqsL+0
+	LDA OctaveBuf
+	STA ARAM+FreqsH+0
 	PLA
 	AND #$70
 	LSR
-	ORA OctaveBuf
-	STA SquareCtrl1
+	STA ARAM+Amplitudes+0
 
 	JMP Music_SetCh2
 Rest_Ch1:
-	STZ SquareNote1
-	LDA #63
-	STA SquareCtrl1
+	STZ ARAM+FreqsL+0
+	STZ ARAM+FreqsH+0
+	STZ ARAM+Amplitudes+0
 
 Music_SetCh2:
 	LDY MusicEnvI_Ch2
@@ -788,7 +784,7 @@ HoldNote_Ch2:
 	LDA (MusicPtr_Ch2), y
 	BEQ Rest_Ch2
 	JSR SetFreqAndOctave
-	STA temp ; stash F number for note
+	STA temp ; stash pitch low byte
 	LDY MusicEnvI_Ch2
 	LDA (MusicEnvP_Ch2), y
 	PHA
@@ -797,28 +793,36 @@ HoldNote_Ch2:
 	ADC #$F8 ;Midpoint is $08
 	CLC
 	ADC temp
-	STA SquareNote2
+	STA ARAM+FreqsL+1
+	LDA OctaveBuf
+	STA ARAM+FreqsH+1
 	PLA
 	AND #$70
 	LSR
-	ORA OctaveBuf
-	STA SquareCtrl2
+	STA ARAM+Amplitudes+1
 
-	JMP MusicDone
+	JMP Music_SetCh3
 Rest_Ch2:
-	STZ SquareNote2
-	LDA #63
-	STA SquareCtrl2
+	STZ ARAM+FreqsL+1
+	STZ ARAM+FreqsH+1
+	STZ ARAM+Amplitudes+1
 
+;Add jump labels in case I implement 4ch music in this game
+Music_SetCh3:
+Music_SetCh4:
 MusicDone:
 
 	;;;Walking sound
-	LDY #$3F
+	LDY #$FF
 	LDA GuyFrame
 	CMP #1
 	BNE *+4
-	LDY #$53
-	STY NoiseCtrl
+	LDY #$30
+	STY ARAM+Amplitudes+2
+	LDA MusicTicksLeft
+	STA ARAM+FreqsL+2
+	LDA #$80
+	STA ARAM+FreqsH+2
 
 	;not used, commenting out to save space for now
 	;;;SFX, channel 1
@@ -841,12 +845,25 @@ NoSFX1:
 	LDY #0
 	LDA (sfx_ch2), y
 	BEQ NoSFX2
-	STA SquareNote2
+	EOR #$FF
+	STA ARAM+FreqsL+1
 	INC sfx_ch2
 	BNE *+4
 	INC sfx_ch2+1
 	LDA (sfx_ch2), y
-	STA SquareCtrl2
+	AND #%00111000
+	LSR
+	LSR
+	LSR
+	STA ARAM+FreqsH+1
+	LDA (sfx_ch2), y
+	AND #%00000111
+	ASL
+	ASL
+	ASL
+	ASL
+	ASL
+	STA ARAM+Amplitudes+1
 	INC sfx_ch2
 	BNE *+4
 	INC sfx_ch2+1
@@ -857,7 +874,19 @@ NoSFX2:
 	LDY #0
 	LDA (sfx_ch3), y
 	BEQ NoSFX3
-	STA NoiseCtrl
+	STZ ARAM+FreqsL+2
+	AND #%00111000
+	EOR #$3F
+	STA ARAM+FreqsH+2
+	LDA (sfx_ch3), y
+	AND #%00000111
+	ASL
+	ASL
+	ASL
+	ASL
+	ASL
+	EOR #$FF
+	STA ARAM+Amplitudes+2
 	INC sfx_ch3
 	BNE *+4
 	INC sfx_ch3+1
@@ -868,18 +897,6 @@ NoSFX3:
 	JMP Forever ;;;;;actual bottom of frame update loop
 
 DrawUI:
-	LDA #$20
-	STA PrintNum_X
-	STA PrintNum_Y
-	LDA PlayerData+VX
-	STA PrintNum_N
-	JSR PrintNum
-	LDA #$28
-	STA PrintNum_Y
-	LDA PlayerData+VY
-	STA PrintNum_N
-	JSR PrintNum
-
 	LDY HP_Remaining
 	BEQ DrawKeys
 DrawHP:
@@ -1248,24 +1265,26 @@ UpdateInputs:
 
 SetFreqAndOctave:
 	;This routine takes the command byte from the Accumulator and sets
-	;the Accumulator to the pitch byte and the OctaveBuf var to the corresponding octave (0-3)
-	;Uses the X register
+	;the Accumulator to the pitch low byte and the OctaveBuf var to the corresponding pitch high byte
+	;Uses the X and Y registers
+	STA temp
+	AND #$70
+	LSR
+	LSR
+	LSR
+	LSR
 	TAX
-	AND #112
-	LSR
-	LSR
-	LSR
-	LSR
-	STA $0
-	LDA #7
+	LDA TwelveTimesTable, x
+	STA temp+1
+	LDA temp
+	AND #$0F
 	CLC
-	SBC $0
-	AND #7
-	STA OctaveBuf
-	TXA
-	AND #15
+	ADC temp+1
+	ASL
 	TAX
-	LDA NoteFreqs, x;
+	LDA Pitches+2, x
+	STA OctaveBuf
+	LDA Pitches+3, x
 	RTS
 
 LizardUpdate:
@@ -1687,53 +1706,6 @@ PrintStr:
 StringDone:
 	RTS
 
-PrintNum:
-	;Print first digit
-	LDA PrintNum_X
-	STA DMA_VX
-	LDA PrintNum_Y
-	STA DMA_VY
-	LDA PrintNum_N
-	AND #$F0
-	CLC
-	LSR
-	STA DMA_GX
-	LDA #96
-	STA DMA_GY
-	LDA #8
-	STA DMA_WIDTH
-	LDA #8
-	STA DMA_HEIGHT
-	;start a DMA transfer
-	LDA #1
-	STA DMA_Status
-	WAI
-	;Print second digit
-	LDA PrintNum_X
-	CLC
-	ADC #8
-	STA DMA_VX
-	LDA PrintNum_Y
-	STA DMA_VY
-	LDA PrintNum_N
-	AND #$0F
-	CLC
-	ASL
-	ASL
-	ASL
-	STA DMA_GX
-	LDA #96
-	STA DMA_GY
-	LDA #8
-	STA DMA_WIDTH
-	LDA #8
-	STA DMA_HEIGHT
-	;start a DMA transfer
-	LDA #1
-	STA DMA_Status
-	WAI
-	RTS
-
 ABS:
 	BPL *+7
 	EOR #$FF
@@ -1751,7 +1723,7 @@ UpdateFuncs:         ;id#
 	.dw DoorUpdate	 ;C
 	.dw ExplosionUpdate ;E
 	.dw FireUpdate ;10
-
+	
 	.align 8
 ItemTemplates:
 	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
@@ -1823,23 +1795,16 @@ Str_DoorBlank:
 Sprites:
 	.incbin "sprites/gamesprites.gtg.deflate"
 
-AudioSamples:
-	.incbin "oopsAllZeroes.bin.deflate"
-
-NoteFreqs:
-	.db $D4, $C8, $BD, $B2, $A8, $9E, $95, $8D, $85, $7D, $76, $70, $00, $00, $00, $00
-
-
 InstrumEnv1:
-	.db $08, $08, $08, $08, $18
-	.db $28, $38, $48, $58, $68
-	.db $F8
+	.db $58, $58, $58, $58, $48
+	.db $48, $38, $38, $28, $08
+	.db $88
 InstrumEnv2:
-	.db $1F, $1C, $18, $18, $18
-	.db $28, $28, $38, $38, $48
-	.db $48, $48, $58, $58, $58
-	.db $58, $68, $68, $68, $68
-	.db $F8
+	.db $5F, $5C, $48, $38, $38
+	.db $38, $38, $38, $38, $38
+	.db $28, $28, $28, $28, $28
+	.db $18, $18, $18, $18, $18
+	.db $88
 
 MusicPkg_Main:
 	.incbin "music\cubeknight_alltracks.gtm.deflate"
@@ -1852,7 +1817,14 @@ TitleScreen:
 	.incbin "tiled\title_merged.map.deflate"
 WinScreen:
 	.incbin "tiled\end_merged.map.deflate"
-	
+
+ACProg:
+	.incbin "acp/dynawave_nosine.acp.deflate"
+
+TwelveTimesTable:
+	.db 0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120
+Pitches:
+	.incbin "pitches.dat"
 
 NMI:
 	STZ FrameFlag
