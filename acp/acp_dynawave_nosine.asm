@@ -121,7 +121,6 @@ AddNoise:
 	LSR
 	LSR
 	LSR
-	LSR
 	BEQ SkipNoiseAttenuation
 	TAX
 	LDA LFSR
