@@ -616,7 +616,7 @@ DontNextScreen:
 	BNE SkipDrawGuy
 	;Draw player object
 	LDA DMA_Flags_buffer
-	ORA #$80; Set Opaque
+	AND #$7F ; Set Transparent
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #<PlayerData
@@ -638,7 +638,7 @@ SkipDrawGuy:
 
 	;Draw Nonstatic Objects
 	LDA DMA_Flags_buffer
-	ORA #$80; Set Opaque
+	AND #$7F ; Set Transparent
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #<Items
@@ -983,7 +983,6 @@ DrawMovables:
 	SEC
 	SBC #$1
 	EOR #$7F
-	AND #$7F
 SkipFlip:
 	STA DMA_GX
 	INY
