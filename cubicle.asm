@@ -344,12 +344,16 @@ PostDeathExplosionSpawn:
 	STY PlayerData+SX ;set X speed of first movable
 	LDY #GuyAnimRow
 	STY PlayerData+GY ;select right-facing row
+	LDY #$10
+	STY PlayerData+W
 	CMP #INPUT_MASK_RIGHT
 	BEQ SkipInput
 	LDY #$FF
 	STY PlayerData+SX ;set X speed of first movable
-	LDY #(GuyAnimRow + $10)
+	LDY #GuyAnimRow
 	STY PlayerData+GY ;select left-facing row
+	LDY #$90
+	STY PlayerData+W
 SkipInput:
 	
 	INC GuyFrame
@@ -612,7 +616,7 @@ DontNextScreen:
 	BNE SkipDrawGuy
 	;Draw player object
 	LDA DMA_Flags_buffer
-	AND #%01111111 ;enable transparency
+	ORA #$80; Set Opaque
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #<PlayerData
@@ -634,7 +638,7 @@ SkipDrawGuy:
 
 	;Draw Nonstatic Objects
 	LDA DMA_Flags_buffer
-	AND #%01111111 ;enable transparency
+	ORA #$80; Set Opaque
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #<Items
@@ -828,7 +832,7 @@ MusicDone:
 	STY ARAM+Amplitudes+2
 	LDA MusicTicksLeft
 	STA ARAM+FreqsL+2
-	LDA #$80
+	ORA #$80
 	STA ARAM+FreqsH+2
 
 	;not used, commenting out to save space for now
@@ -966,11 +970,21 @@ DrawMovables:
 	BNE *+3
 	RTS
 	STA DMA_WIDTH
+	STA temp
 	INY
 	LDA (displaylist_zp), y ;load height
 	STA DMA_HEIGHT
 	INY
 	LDA (displaylist_zp), y ;load GX
+	LDX temp
+	BPL SkipFlip
+	CLC
+	ADC temp
+	SEC
+	SBC #$1
+	EOR #$7F
+	AND #$7F
+SkipFlip:
 	STA DMA_GX
 	INY
 	LDA (displaylist_zp), y ;load GY
@@ -1311,9 +1325,9 @@ LizardUpdate:
 	LDA #%00111111
 	BIT gameobject+EntData
 	BNE LizardAnim
-	LDA gameobject+GY
-	EOR #$10
-	STA gameobject+GY
+	LDA gameobject+W
+	EOR #$80
+	STA gameobject+W
 
 LizardAnim:
 	LDA #%00001111
@@ -1733,15 +1747,15 @@ UpdateFuncs:         ;id#
 	.align 8
 ItemTemplates:
 	;     W,   H,  GX,  GY,  VX,  VY,  Fn, Data
-	.db $0F, $10, $00, $40, $40, $40, $02, $00 ; Lizard
-	.db $0F, $10, $40, $40, $40, $40, $04, $00 ; Burger
-	.db $0F, $10, $20, $50, $40, $40, $06, $08 ; Key
-	.db $0F, $08, $30, $40, $40, $40, $08, $00 ; Spring
-	.db $0F, $10, $20, $40, $40, $40, $0A, $00 ; Spikeball
-	.db $0F, $10, $70, $70, $40, $40, $0C, $00 ; Door
-	.db $07, $08, $50, $40, $40, $40, $0E, $00 ; Explosion
-	.db $0F, $10, $40, $50, $40, $40, $10, $00 ; Fire
-	.db $0F, $10, $50, $50, $40, $40, $10, $00 ; GroundSpikes
+	.db $10, $10, $00, $40, $40, $40, $02, $00 ; Lizard
+	.db $10, $10, $40, $40, $40, $40, $04, $00 ; Burger
+	.db $10, $10, $20, $50, $40, $40, $06, $08 ; Key
+	.db $10, $08, $30, $40, $40, $40, $08, $00 ; Spring
+	.db $10, $10, $20, $40, $40, $40, $0A, $00 ; Spikeball
+	.db $10, $10, $70, $70, $40, $40, $0C, $00 ; Door
+	.db $08, $08, $50, $40, $40, $40, $0E, $00 ; Explosion
+	.db $10, $10, $40, $50, $40, $40, $10, $00 ; Fire
+	.db $10, $10, $50, $50, $40, $40, $10, $00 ; GroundSpikes
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
 	.db $0F, $10, $20, $10, $40, $40, $00, $00 ; Error
