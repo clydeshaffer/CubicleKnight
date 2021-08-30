@@ -49,6 +49,7 @@ MusicTicksTotal = $71 ; 72
 MusicTicksLeft = $73 ; 74
 
 DMA_Flags_buffer = $90
+Banking_Register_buffer = $91
 
 sfx_ch1 = $B0;B1
 sfx_ch2 = sfx_ch1+2
@@ -73,6 +74,7 @@ StartMap = $1C00
 
 Audio_Reset = $2000
 Audio_NMI = $2001
+Banking_Register = $2005
 Audio_Rate = $2006
 DMA_Flags = $2007
 
@@ -211,6 +213,7 @@ StartupWait:
 	;extract graphics to graphics RAM
 	LDA #%10000000	;Activate lower page of VRAM/GRAM, CPU accesses GRAM, no IRQ, no transparency
 	STA DMA_Flags
+	STZ Banking_Register
 	
 	;run INFLATE to decompress graphics
 	LDA #<Sprites
@@ -260,8 +263,12 @@ StartupWait:
 	LDY #0
 	JSR CopyPage
 
+	; DMA | VNMI | AUTOTILE | CPUVRAM | IRQ | OPAQUE
 	LDA #%11110101
 	STA DMA_Flags_buffer
+	; HIGHVRAM
+	LDA #%00001000
+	STA Banking_Register_buffer
 
 Forever:
 	JSR AwaitVSync
@@ -290,19 +297,23 @@ GameAlreadyStarted:
 
 	;Swap video and draw target buffers
 	LDA DMA_Flags_buffer
-	EOR #%00010010
+	EOR #%00000010 ; flip VIDOUT
 	STA DMA_Flags_buffer
 	STA DMA_Flags
+	LDA Banking_Register_buffer
+	EOR #%00001000 ; flip VRAM page
+	STA Banking_Register_buffer
+	STA Banking_Register
 
 	LDA DMA_Flags_buffer
-	ORA #%10000000 ;disable transparency
+	ORA #%10001000 ;disable transparency, enable colorfill
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	JSR ClearScreenBGColor
 
 	;draw current tilemap
 	LDA DMA_Flags_buffer
-	AND #%01111111 ;enable transparency
+	AND #%01110111 ;enable transparency, disable colorfill
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	JSR DrawTilemap
@@ -636,17 +647,15 @@ SkipDrawGuy:
 
 	;Set left border pixels to black
 	LDA DMA_Flags_buffer
-	ORA #%10000000 ;disable transparency
+	ORA #%10001000 ;disable transparency, enable colorfill
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #0
 	STA DMA_VX
 	LDA #0
 	STA DMA_VY
-	LDA #%10000000
-	STA DMA_GX
-	LDA #%00000000
-	STA DMA_GY
+	STZ DMA_GX
+	STZ DMA_GY
 	LDA #1
 	STA DMA_WIDTH
 	LDA #127
@@ -662,17 +671,15 @@ SkipDrawGuy:
 
 	;Set right border pixels to black
 	LDA DMA_Flags_buffer
-	ORA #%10000000 ;disable transparency
+	ORA #%10001000 ;disable transparency, enable colorfill
 	STA DMA_Flags_buffer
 	STA DMA_Flags
 	LDA #127
 	STA DMA_VX
 	LDA #0
 	STA DMA_VY
-	LDA #%10000000
-	STA DMA_GX
-	LDA #%00000000
-	STA DMA_GY
+	STZ DMA_GX
+	STZ DMA_GY
 	LDA #2
 	STA DMA_WIDTH
 	LDA #127
@@ -1130,8 +1137,7 @@ ClearScreenBGColor:
 	STA DMA_HEIGHT
 	STZ DMA_VX
 	STZ DMA_VY
-	LDA #$80
-	STA DMA_GX
+	STZ DMA_GX
 	STZ DMA_GY
 	LDA BGColor
 	STA DMA_Color
@@ -1342,9 +1348,9 @@ BurgerUpdate:
 	JMP UpdateDone
 	STZ gameobject+FuncNum
 	LDA gameobject+GX
-	ORA #$80
+	ORA #$70
 	STA gameobject+GX
-	LDA #$FF
+	LDA #$70
 	STA gameobject+GY
 	LDA #<SFX_Burger
 	STA sfx_ch2
@@ -1370,9 +1376,9 @@ KeyUpdate:
 	JMP UpdateDone
 	STZ gameobject+FuncNum
 	LDA gameobject+GX
-	ORA #$80
+	ORA #$70
 	STA gameobject+GX
-	LDA #$FF
+	LDA #$70
 	STA gameobject+GY
 	LDA #<SFX_Key
 	STA sfx_ch2
@@ -1732,7 +1738,7 @@ ItemTemplates:
 	.db $0F, $10, $20, $50, $40, $40, $06, $08 ; Key
 	.db $0F, $08, $30, $40, $40, $40, $08, $00 ; Spring
 	.db $0F, $10, $20, $40, $40, $40, $0A, $00 ; Spikeball
-	.db $0F, $10, $80, $FF, $40, $40, $0C, $00 ; Door
+	.db $0F, $10, $70, $70, $40, $40, $0C, $00 ; Door
 	.db $07, $08, $50, $40, $40, $40, $0E, $00 ; Explosion
 	.db $0F, $10, $40, $50, $40, $40, $10, $00 ; Fire
 	.db $0F, $10, $50, $50, $40, $40, $10, $00 ; GroundSpikes
