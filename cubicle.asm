@@ -160,10 +160,26 @@ StartupWait:
 	DEY
 	BNE StartupWait
 
-	STZ FrameFlag
-
+	;This section initializes the banking and sets the GRAM "middle bits" to zero
+	STZ Banking_Register
 	LDA #$FF
 	STA BGColor
+	LDA #%11111101
+	STA DMA_Flags
+	LDA #$7F
+	STA DMA_WIDTH
+	STA DMA_HEIGHT
+	STZ DMA_VX
+	STZ DMA_VY
+	STZ DMA_GX
+	STZ DMA_GY
+	LDA BGColor
+	STA DMA_Color
+	LDA #1
+	STA DMA_Status
+	WAI
+
+	STZ FrameFlag
 
 	;make sure audio coprocessor is stopped
 	LDA #$7F
