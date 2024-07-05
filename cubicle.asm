@@ -21,8 +21,13 @@ Dif_GamePad1BufferA = $3E
 Dif_GamePad1BufferB = $3F
 
 PrintNum_X = $40
-PrintNum_Y = PrintNum_X+1
-PrintNum_N = PrintNum_X+2
+PrintNum_Y = $41
+PrintNum_N = $42
+
+FrameCounter0 = $43
+FrameCounter1 = $44
+FrameCounter2 = $45
+IsCountingFrames = $46
 
 OctaveBuf      = $50
 MusicPtr_Ch1   = $51 ; 52
@@ -286,9 +291,26 @@ StartupWait:
 	LDA #%00001000
 	STA Banking_Register_buffer
 
+	STA IsCountingFrames
+
 Forever:
 	JSR AwaitVSync
 	JSR UpdateInputs
+	LDA IsCountingFrames
+	BEQ SkipFrameCount
+	SED
+	CLC
+	LDA #1
+	ADC FrameCounter0
+	STA FrameCounter0
+	LDA #0
+	ADC FrameCounter1
+	STA FrameCounter1
+	LDA #0
+	ADC FrameCounter2
+	STA FrameCounter2
+	CLD
+SkipFrameCount:
 
 	LDA GameStarted
 	BNE GameAlreadyStarted
@@ -299,6 +321,11 @@ Forever:
 	STA GameStarted
 	LDA #3
 	STA HP_Remaining
+	STZ FrameCounter0
+	STZ FrameCounter1
+	STZ FrameCounter2
+	LDA #1
+	STA IsCountingFrames
 	;decomprss map data
 	LDA #<Maps
 	STA inflate_zp
@@ -1707,6 +1734,7 @@ MakeExplosion:
 	RTS
 
 LoadWinScreen:
+	STZ IsCountingFrames
 	STZ HP_Remaining
 	STZ Keys_Collected
 
@@ -1728,6 +1756,35 @@ LoadWinScreen:
 	LDA #>MusicPkg_Win
 	STA inflate_zp+1
 	JSR LoadMusic
+
+	LDY #$E9
+	LDX FrameCounter2
+	JSR PutCounter
+	LDX FrameCounter1
+	JSR PutCounter
+	LDX FrameCounter0
+	JSR PutCounter
+
+	RTS
+
+PutCounter:
+	CLC
+	TXA
+	BEQ SkipHighCountDigits
+	LSR
+	LSR
+	LSR
+	LSR
+	ADC #192
+	STA (current_tilemap), y
+	INY
+	TXA
+	CLC
+	AND #$0F
+	ADC #192
+	STA (current_tilemap), y
+	INY
+SkipHighCountDigits:
 	RTS
 
 ;prints a null terminated bytestring (temp) to address (temp+2)

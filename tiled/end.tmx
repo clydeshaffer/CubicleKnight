@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.4" tiledversion="1.4.1" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="8" tileheight="8" infinite="0" nextlayerid="2" nextobjectid="1">
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="16" height="16" tilewidth="8" tileheight="8" infinite="0" nextlayerid="2" nextobjectid="1">
+ <editorsettings>
+  <export target="end.csv" format="csv"/>
+ </editorsettings>
  <tileset firstgid="1" source="gamesprites.tsx"/>
  <layer id="1" name="Tile Layer 1" width="16" height="16">
   <data encoding="csv">
@@ -17,7 +20,7 @@
 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,207,221,205,203,218,207,206,231,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,222,211,215,207,235,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
