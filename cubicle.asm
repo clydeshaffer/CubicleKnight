@@ -24,9 +24,9 @@ PrintNum_X = $40
 PrintNum_Y = $41
 PrintNum_N = $42
 
-FrameCounter0 = $43
-FrameCounter1 = $44
-FrameCounter2 = $45
+FrameCounterFrames = $43
+FrameCounterSeconds = $44
+FrameCounterMinutes = $45
 IsCountingFrames = $46
 
 OctaveBuf      = $50
@@ -301,14 +301,31 @@ Forever:
 	SED
 	CLC
 	LDA #1
-	ADC FrameCounter0
-	STA FrameCounter0
+	ADC FrameCounterFrames
+	STA FrameCounterFrames
+	CMP #$60
+	BNE DoneFrameCountInc
+	;; Frames roll over into seconds
+	STZ FrameCounterFrames
 	LDA #0
-	ADC FrameCounter1
-	STA FrameCounter1
+	ADC FrameCounterSeconds
+	STA FrameCounterSeconds
+	CMP #$60
+	BNE DoneFrameCountInc
+	;; Seconds roll over into minutes
+	STZ FrameCounterSeconds
 	LDA #0
-	ADC FrameCounter2
-	STA FrameCounter2
+	ADC FrameCounterMinutes
+	STA FrameCounterMinutes
+	CMP #$60
+	BNE DoneFrameCountInc
+	;; Minutes rollover, no where to go :(
+	;; Set timer to 59:59'59
+	LDA #$59
+	STA FrameCounterFrames
+	STA FrameCounterSeconds
+	STA FrameCounterMinutes
+DoneFrameCountInc:
 	CLD
 SkipFrameCount:
 
@@ -321,9 +338,9 @@ SkipFrameCount:
 	STA GameStarted
 	LDA #3
 	STA HP_Remaining
-	STZ FrameCounter0
-	STZ FrameCounter1
-	STZ FrameCounter2
+	STZ FrameCounterFrames
+	STZ FrameCounterSeconds
+	STZ FrameCounterMinutes
 	LDA #1
 	STA IsCountingFrames
 	;decomprss map data
@@ -1757,12 +1774,14 @@ LoadWinScreen:
 	STA inflate_zp+1
 	JSR LoadMusic
 
-	LDY #$E9
-	LDX FrameCounter2
+	LDY #$E7
+	LDX FrameCounterMinutes
 	JSR PutCounter
-	LDX FrameCounter1
+	INY
+	LDX FrameCounterSeconds
 	JSR PutCounter
-	LDX FrameCounter0
+	INY
+	LDX FrameCounterFrames
 	JSR PutCounter
 
 	RTS
@@ -1770,7 +1789,6 @@ LoadWinScreen:
 PutCounter:
 	CLC
 	TXA
-	BEQ SkipHighCountDigits
 	LSR
 	LSR
 	LSR
@@ -1784,7 +1802,6 @@ PutCounter:
 	ADC #192
 	STA (current_tilemap), y
 	INY
-SkipHighCountDigits:
 	RTS
 
 ;prints a null terminated bytestring (temp) to address (temp+2)
